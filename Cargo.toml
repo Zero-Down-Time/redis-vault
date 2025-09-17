@@ -7,14 +7,14 @@ edition = "2024"
 tokio = { version = "1.35", features = ["full"] }
 aws-config = "1.1"
 aws-sdk-s3 = "1.12"
-google-cloud-storage = "0.15"
-google-cloud-auth = "0.13"
-redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+google-cloud-storage = "0.25"
+google-cloud-auth = "0.23"
+redis = { version = "0.32", features = ["tokio-comp", "connection-manager"] }
 chrono = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
-config = "0.13"
+config = "0.15"
 clap = { version = "4.4", features = ["derive", "env"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
