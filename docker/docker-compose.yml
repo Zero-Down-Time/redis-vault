@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   redis-master:
-    image: redis:7-alpine
+    image: redis:8-alpine
     command: redis-server --save 60 1 --loglevel warning
     volumes:
       - redis-data:/data
@@ -59,7 +59,7 @@ services:
 
   # Example Redis replica with its own backup sidecar
   redis-replica:
-    image: redis:7-alpine
+    image: redis:8-alpine
     command: redis-server --replicaof redis-master 6379 --save 60 1
     volumes:
       - redis-replica-data:/data
