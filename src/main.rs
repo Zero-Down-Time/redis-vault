@@ -168,7 +168,8 @@ impl StorageBackend for S3Storage {
         let mut continuation_token = None;
 
         loop {
-            let mut request = self.client
+            let mut request = self
+                .client
                 .list_objects_v2()
                 .bucket(&self.bucket)
                 .prefix(prefix);
@@ -268,7 +269,8 @@ impl StorageBackend for GcsStorage {
             ..Default::default()
         };
 
-        let objects = self.client
+        let objects = self
+            .client
             .list_objects(&req)
             .await
             .map_err(|e| BackupError::Gcs(e.to_string()))?;
@@ -278,8 +280,9 @@ impl StorageBackend for GcsStorage {
         if let Some(items) = objects.items {
             for object in items {
                 if let Some(time_created) = object.time_created {
-                    let timestamp = DateTime::<Utc>::from_timestamp(time_created.unix_timestamp(), 0)
-                        .unwrap_or_else(Utc::now);
+                    let timestamp =
+                        DateTime::<Utc>::from_timestamp(time_created.unix_timestamp(), 0)
+                            .unwrap_or_else(Utc::now);
 
                     backups.push(BackupMetadata {
                         key: object.name,
@@ -350,12 +353,8 @@ impl BackupManager {
     async fn new(config: Config) -> Result<Self> {
         // Create storage backend
         let storage: Arc<dyn StorageBackend> = match &config.storage {
-            StorageConfig::S3(s3_config) => {
-                Arc::new(S3Storage::new(s3_config).await?)
-            }
-            StorageConfig::GCS(gcs_config) => {
-                Arc::new(GcsStorage::new(gcs_config).await?)
-            }
+            StorageConfig::S3(s3_config) => Arc::new(S3Storage::new(s3_config).await?),
+            StorageConfig::GCS(gcs_config) => Arc::new(GcsStorage::new(gcs_config).await?),
         };
 
         // Create Redis connection if needed
@@ -404,7 +403,11 @@ impl BackupManager {
         }
 
         // Construct dump file path
-        let dump_path = self.config.redis.data_path.join(&self.config.backup.dump_filename);
+        let dump_path = self
+            .config
+            .redis
+            .data_path
+            .join(&self.config.backup.dump_filename);
 
         // Check if dump file exists
         if !dump_path.exists() {
@@ -557,8 +560,8 @@ fn get_default_config() -> Config {
             dump_filename: "dump.rdb".to_string(),
         },
         storage: StorageConfig::S3(S3Config {
-            bucket: "redis-vault".to_string()
-            prefix: "redis-vault".to_string()
+            bucket: "redis-vault".to_string(),
+            prefix: "redis-vault".to_string(),
             region: None,
             endpoint: None,
         }),
@@ -609,23 +612,21 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
             })
             .context("GCS_BUCKET required for GCS storage")?;
 
-        let prefix = std::env::var("GCS_PREFIX")
-            .unwrap_or_else(|_| {
-                if let StorageConfig::GCS(ref gcs_config) = config.storage {
-                    gcs_config.prefix.clone()
-                } else {
-                    "redis-vault".to_string()
-                }
-            });
+        let prefix = std::env::var("GCS_PREFIX").unwrap_or_else(|_| {
+            if let StorageConfig::GCS(ref gcs_config) = config.storage {
+                gcs_config.prefix.clone()
+            } else {
+                "redis-vault".to_string()
+            }
+        });
 
-        let project_id = std::env::var("GCS_PROJECT_ID").ok()
-            .or_else(|| {
-                if let StorageConfig::GCS(ref gcs_config) = config.storage {
-                    gcs_config.project_id.clone()
-                } else {
-                    None
-                }
-            });
+        let project_id = std::env::var("GCS_PROJECT_ID").ok().or_else(|| {
+            if let StorageConfig::GCS(ref gcs_config) = config.storage {
+                gcs_config.project_id.clone()
+            } else {
+                None
+            }
+        });
 
         config.storage = StorageConfig::GCS(GcsConfig {
             bucket,
@@ -643,32 +644,29 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
             })
             .context("S3_BUCKET required for S3 storage")?;
 
-        let prefix = std::env::var("S3_PREFIX")
-            .unwrap_or_else(|_| {
-                if let StorageConfig::S3(ref s3_config) = config.storage {
-                    s3_config.prefix.clone()
-                } else {
-                    "redis-vault".to_string()
-                }
-            });
+        let prefix = std::env::var("S3_PREFIX").unwrap_or_else(|_| {
+            if let StorageConfig::S3(ref s3_config) = config.storage {
+                s3_config.prefix.clone()
+            } else {
+                "redis-vault".to_string()
+            }
+        });
 
-        let region = std::env::var("AWS_REGION").ok()
-            .or_else(|| {
-                if let StorageConfig::S3(ref s3_config) = config.storage {
-                    s3_config.region.clone()
-                } else {
-                    None
-                }
-            });
+        let region = std::env::var("AWS_REGION").ok().or_else(|| {
+            if let StorageConfig::S3(ref s3_config) = config.storage {
+                s3_config.region.clone()
+            } else {
+                None
+            }
+        });
 
-        let endpoint = std::env::var("S3_ENDPOINT").ok()
-            .or_else(|| {
-                if let StorageConfig::S3(ref s3_config) = config.storage {
-                    s3_config.endpoint.clone()
-                } else {
-                    None
-                }
-            });
+        let endpoint = std::env::var("S3_ENDPOINT").ok().or_else(|| {
+            if let StorageConfig::S3(ref s3_config) = config.storage {
+                s3_config.endpoint.clone()
+            } else {
+                None
+            }
+        });
 
         config.storage = StorageConfig::S3(S3Config {
             bucket,
@@ -695,7 +693,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(tracing::Level::INFO.into())
+                .add_directive(tracing::Level::INFO.into()),
         )
         .json()
         .init();
