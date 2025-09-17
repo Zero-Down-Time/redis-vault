@@ -4,7 +4,7 @@ use aws_sdk_s3::Client as S3Client;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use clap::Parser;
-use google_cloud_storage::client::{Client as GcsClient, ClientConfig};
+use gcloud_storage::client::{Client as GcsClient, ClientConfig};
 use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -244,7 +244,7 @@ impl GcsStorage {
 #[async_trait]
 impl StorageBackend for GcsStorage {
     async fn upload(&self, key: &str, data: Bytes) -> Result<()> {
-        use google_cloud_storage::http::objects::upload::{Media, UploadObjectRequest, UploadType};
+        use gcloud_storage::http::objects::upload::{Media, UploadObjectRequest, UploadType};
 
         let upload_type = UploadType::Simple(Media::new(key.to_string()));
         let req = UploadObjectRequest {
@@ -261,7 +261,7 @@ impl StorageBackend for GcsStorage {
     }
 
     async fn list(&self, prefix: &str) -> Result<Vec<BackupMetadata>> {
-        use google_cloud_storage::http::objects::list::ListObjectsRequest;
+        use gcloud_storage::http::objects::list::ListObjectsRequest;
 
         let req = ListObjectsRequest {
             bucket: self.bucket.clone(),
@@ -297,7 +297,7 @@ impl StorageBackend for GcsStorage {
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
-        use google_cloud_storage::http::objects::delete::DeleteObjectRequest;
+        use gcloud_storage::http::objects::delete::DeleteObjectRequest;
 
         let req = DeleteObjectRequest {
             bucket: self.bucket.clone(),

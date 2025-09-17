@@ -7,8 +7,7 @@ edition = "2024"
 tokio = { version = "1.35", features = ["full"] }
 aws-config = "1.1"
 aws-sdk-s3 = "1.12"
-google-cloud-storage = "1.0"
-google-cloud-auth = "1.0"
+gcloud-storage = "1.1"
 redis = { version = "0.32", features = ["tokio-comp", "connection-manager"] }
 chrono = "0.4"
 serde = { version = "1.0", features = ["derive"] }
