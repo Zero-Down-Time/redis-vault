@@ -27,8 +27,8 @@ docker build -t redis-vault:latest .
 
 # Build with specific versions
 docker build \
-  --build-arg RUST_VERSION=1.75 \
-  --build-arg ALPINE_VERSION=3.19 \
+  --build-arg RUST_VERSION=1.87 \
+  --build-arg ALPINE_VERSION=3.22 \
   -t redis-vault:latest .
 ```
 
