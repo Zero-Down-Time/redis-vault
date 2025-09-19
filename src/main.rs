@@ -1,10 +1,6 @@
 use anyhow::{Context, Result};
-use async_trait::async_trait;
-use aws_sdk_s3::Client as S3Client;
-use bytes::Bytes;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use clap::Parser;
-use gcloud_storage::client::{Client as GcsClient, ClientConfig};
 use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -12,6 +8,11 @@ use std::sync::Arc;
 use tokio::fs;
 use tokio::time;
 use tracing::{debug, error, info, warn};
+
+mod storage;
+use storage::StorageBackend;
+use storage::gcs::{GcsConfig, GcsStorage};
+use storage::s3::{S3Config, S3Storage};
 
 // Custom error types
 #[derive(Debug, thiserror::Error)]
@@ -80,238 +81,11 @@ enum StorageConfig {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-struct S3Config {
-    bucket: String,
-    prefix: String,
-    region: Option<String>,
-    endpoint: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-struct GcsConfig {
-    bucket: String,
-    prefix: String,
-    project_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
 struct RetentionConfig {
     /// Keep last N backups
     keep_last: usize,
     /// Keep backups newer than this duration (e.g., "7d", "30d")
     keep_duration: Option<String>,
-}
-
-// Storage backend trait
-#[async_trait]
-trait StorageBackend: Send + Sync {
-    async fn upload(&self, key: &str, data: Bytes) -> Result<()>;
-    async fn list(&self, prefix: &str) -> Result<Vec<BackupMetadata>>;
-    async fn delete(&self, key: &str) -> Result<()>;
-}
-
-#[derive(Debug, Clone)]
-struct BackupMetadata {
-    key: String,
-    timestamp: DateTime<Utc>,
-    #[allow(dead_code)]
-    size: i64,
-}
-
-// S3 Storage Implementation
-struct S3Storage {
-    client: S3Client,
-    bucket: String,
-}
-
-impl S3Storage {
-    async fn new(config: &S3Config) -> Result<Self> {
-        let mut aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest());
-
-        if let Some(region) = &config.region {
-            aws_config = aws_config.region(aws_config::Region::new(region.clone()));
-        }
-
-        let aws_config = aws_config.load().await;
-        let mut s3_config = aws_sdk_s3::config::Builder::from(&aws_config);
-
-        if let Some(endpoint) = &config.endpoint {
-            s3_config = s3_config.endpoint_url(endpoint);
-        }
-
-        let client = S3Client::from_conf(s3_config.build());
-
-        Ok(S3Storage {
-            client,
-            bucket: config.bucket.clone(),
-        })
-    }
-}
-
-#[async_trait]
-impl StorageBackend for S3Storage {
-    async fn upload(&self, key: &str, data: Bytes) -> Result<()> {
-        self.client
-            .put_object()
-            .bucket(&self.bucket)
-            .key(key)
-            .body(data.into())
-            .send()
-            .await
-            .map_err(|e| BackupError::S3(e.to_string()))?;
-
-        Ok(())
-    }
-
-    async fn list(&self, prefix: &str) -> Result<Vec<BackupMetadata>> {
-        let mut backups = Vec::new();
-        let mut continuation_token = None;
-
-        loop {
-            let mut request = self
-                .client
-                .list_objects_v2()
-                .bucket(&self.bucket)
-                .prefix(prefix);
-
-            if let Some(token) = continuation_token {
-                request = request.continuation_token(token);
-            }
-
-            let response = request
-                .send()
-                .await
-                .map_err(|e| BackupError::S3(e.to_string()))?;
-
-            if let Some(contents) = response.contents {
-                for object in contents {
-                    if let (Some(key), Some(last_modified)) = (object.key, object.last_modified) {
-                        backups.push(BackupMetadata {
-                            key,
-                            timestamp: DateTime::from_timestamp(last_modified.secs(), 0)
-                                .unwrap_or_else(Utc::now),
-                            size: object.size.unwrap_or(0),
-                        });
-                    }
-                }
-            }
-
-            if response.is_truncated.unwrap_or(false) {
-                continuation_token = response.next_continuation_token;
-            } else {
-                break;
-            }
-        }
-
-        Ok(backups)
-    }
-
-    async fn delete(&self, key: &str) -> Result<()> {
-        self.client
-            .delete_object()
-            .bucket(&self.bucket)
-            .key(key)
-            .send()
-            .await
-            .map_err(|e| BackupError::S3(e.to_string()))?;
-
-        Ok(())
-    }
-}
-
-// GCS Storage Implementation
-struct GcsStorage {
-    client: GcsClient,
-    bucket: String,
-}
-
-impl GcsStorage {
-    async fn new(config: &GcsConfig) -> Result<Self> {
-        let client_config = ClientConfig::default()
-            .with_auth()
-            .await
-            .map_err(|e| BackupError::Gcs(e.to_string()))?;
-
-        let client = GcsClient::new(client_config);
-
-        Ok(GcsStorage {
-            client,
-            bucket: config.bucket.clone(),
-        })
-    }
-}
-
-#[async_trait]
-impl StorageBackend for GcsStorage {
-    async fn upload(&self, key: &str, data: Bytes) -> Result<()> {
-        use gcloud_storage::http::objects::upload::{Media, UploadObjectRequest, UploadType};
-
-        let upload_type = UploadType::Simple(Media::new(key.to_string()));
-        let req = UploadObjectRequest {
-            bucket: self.bucket.clone(),
-            ..Default::default()
-        };
-
-        self.client
-            .upload_object(&req, data.to_vec(), &upload_type)
-            .await
-            .map_err(|e| BackupError::Gcs(e.to_string()))?;
-
-        Ok(())
-    }
-
-    async fn list(&self, prefix: &str) -> Result<Vec<BackupMetadata>> {
-        use gcloud_storage::http::objects::list::ListObjectsRequest;
-
-        let req = ListObjectsRequest {
-            bucket: self.bucket.clone(),
-            prefix: Some(prefix.to_string()),
-            ..Default::default()
-        };
-
-        let objects = self
-            .client
-            .list_objects(&req)
-            .await
-            .map_err(|e| BackupError::Gcs(e.to_string()))?;
-
-        let mut backups = Vec::new();
-
-        if let Some(items) = objects.items {
-            for object in items {
-                if let Some(time_created) = object.time_created {
-                    let timestamp =
-                        DateTime::<Utc>::from_timestamp(time_created.unix_timestamp(), 0)
-                            .unwrap_or_else(Utc::now);
-
-                    backups.push(BackupMetadata {
-                        key: object.name,
-                        timestamp,
-                        size: object.size,
-                    });
-                }
-            }
-        }
-
-        Ok(backups)
-    }
-
-    async fn delete(&self, key: &str) -> Result<()> {
-        use gcloud_storage::http::objects::delete::DeleteObjectRequest;
-
-        let req = DeleteObjectRequest {
-            bucket: self.bucket.clone(),
-            object: key.to_string(),
-            ..Default::default()
-        };
-
-        self.client
-            .delete_object(&req)
-            .await
-            .map_err(|e| BackupError::Gcs(e.to_string()))?;
-
-        Ok(())
-    }
 }
 
 // Redis role detection
@@ -422,6 +196,7 @@ impl BackupManager {
         // Read dump file
         info!("Reading dump file: {:?}", dump_path);
         let data = fs::read(&dump_path).await?;
+        let data_bytes = bytes::Bytes::from(data);
 
         // Generate backup key
         let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
@@ -440,7 +215,7 @@ impl BackupManager {
 
         // Upload to storage
         info!("Uploading backup to: {}", key);
-        self.storage.upload(&key, Bytes::from(data)).await?;
+        self.storage.upload(&key, data_bytes).await?;
         info!("Backup uploaded successfully: {}", key);
 
         // Cleanup old backups
@@ -691,9 +466,7 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
 async fn main() -> Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-        )
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .json()
         .init();
 
