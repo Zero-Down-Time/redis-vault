@@ -478,7 +478,8 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
 }
 
 fn init_logging(config: &Config) {
-    let env_filter = tracing_subscriber::EnvFilter::from_default_env();
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
 
     match config.logging.format.as_str() {
         "json" => {

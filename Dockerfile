@@ -1,18 +1,21 @@
 # Dockerfile
 # Build arguments for version control
-ARG RUST_VERSION=1.87
+ARG RUST_VERSION=1.90
 ARG ALPINE_VERSION=3.22
 
 # Builder stage - using Alpine-based Rust for smaller layers
 FROM rust:${RUST_VERSION}-alpine as builder
 
 # Install build dependencies
-RUN apk add --no-cache musl-dev
+RUN apk add --no-cache openssl-dev musl-dev
 
 WORKDIR /app
 
 # Copy manifests
 COPY Cargo.toml Cargo.lock ./
+
+# Ensure we dynamically link to libc due gcc and openssl
+ENV RUSTFLAGS='-C target-feature=-crt-static'
 
 # Build dependencies (this is cached as long as Cargo.toml doesn't change)
 RUN mkdir src && \
@@ -24,7 +27,7 @@ RUN mkdir src && \
 COPY src ./src
 
 # Build application with static linking for Alpine
-RUN cargo build --release --target-dir=./target
+RUN touch src/main.rs && cargo build --release
 
 # Runtime stage
 FROM alpine:${ALPINE_VERSION}
