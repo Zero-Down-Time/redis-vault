@@ -12,7 +12,7 @@ A production-ready Rust application designed to run as a sidecar container along
 - **Comprehensive logging**: Structured JSON logging
 - **Flexible configuration**: YAML config files or environment variables
 - **Environment variable precedence**: Env vars override config file settings
-- **Alpine-based**: Minimal Docker image (~25-30MB)
+- **Alpine-based**: Minimal Docker image (~13MB)
 
 ## Quick Start
 
@@ -27,7 +27,7 @@ docker build -t redis-vault:latest .
 
 # Build with specific versions
 docker build \
-  --build-arg RUST_VERSION=1.87 \
+  --build-arg RUST_VERSION=1.90 \
   --build-arg ALPINE_VERSION=3.22 \
   -t redis-vault:latest .
 ```
@@ -80,6 +80,26 @@ retention:
 logging:
   format: "text"  # or "json"
 ```
+
+### Backup File Naming
+
+Backup files are automatically named using the following structure:
+
+```
+{prefix}/{node_name}_{timestamp}_{file_modification_epoch}.rdb
+```
+
+**Example filename:**
+```
+redis-vault/redis-master-01_20241201_143022_1733065822.rdb
+```
+
+**Components:**
+- `prefix`: Storage prefix from configuration (e.g., "redis-vault")
+- `node_name`: Redis node identifier (e.g., "redis-master-01")
+- `timestamp`: Backup creation time in YYYYMMDD_HHMMSS format
+- `file_modification_epoch`: Unix timestamp of when the dump.rdb file was last modified
+- `.rdb`: File extension
 
 ### Environment Variables
 
