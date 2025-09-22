@@ -76,9 +76,9 @@ This allows you to:
 redis:
   connection_string: "redis://localhost:6379"
   data_path: "/data"
-  node_name: "redis-master-01"
+  node_name: "redis-node"
   backup_master: true
-  backup_replica: false
+  backup_replica: true
 
 backup:
   interval: "1h"
@@ -86,13 +86,17 @@ backup:
 
 storage:
   type: S3  # or GCS
-  bucket: "my-backups"
-  prefix: "redis"
-  region: "us-west-2"
+  bucket: "redis-vault"
+  prefix: "redis-vault"
+  region: null
+  endpoint: null
 
 retention:
   keep_last: 7
-  keep_duration: "30d"
+  keep_duration: null
+
+logging:
+  format: "text"  # or "json"
 ```
 
 ### Environment Variables
@@ -109,15 +113,16 @@ Environment variables **override** any values set in the configuration file. Thi
 | `BACKUP_INTERVAL` | Time between backup checks | `1h` |
 | `DUMP_FILENAME` | Redis dump filename | `dump.rdb` |
 | `STORAGE_TYPE` | Storage backend (`s3` or `gcs`) | `s3` |
-| `S3_BUCKET` | S3 bucket name | Required for S3 |
+| `S3_BUCKET` | S3 bucket name | `redis-vault` |
 | `S3_PREFIX` | S3 key prefix | `redis-vault` |
-| `AWS_REGION` | AWS region | Uses default |
+| `AWS_REGION` | AWS region | None |
 | `S3_ENDPOINT` | Custom S3 endpoint (for MinIO, etc.) | None |
 | `GCS_BUCKET` | GCS bucket name | Required for GCS |
 | `GCS_PREFIX` | GCS object prefix | `redis-vault` |
-| `GCS_PROJECT_ID` | GCP project ID | Uses default |
+| `GCS_PROJECT_ID` | GCP project ID | None |
 | `RETENTION_KEEP_LAST` | Number of recent backups to keep | `7` |
 | `RETENTION_KEEP_DURATION` | Keep backups newer than | None |
+| `LOG_FORMAT` | Log format (`text` or `json`) | `text` |
 | `RUST_LOG` | Log level | `info` |
 
 ### Configuration Override Example
