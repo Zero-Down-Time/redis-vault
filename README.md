@@ -9,10 +9,10 @@ A production-ready Rust application designed to run as a sidecar container along
 - **Role-aware backups**: Configurable to backup from masters, replicas, or both
 - **Automatic retention management**: Cleanup old backups based on count and age
 - **Kubernetes-ready**: Designed for sidecar deployment pattern
-- **Comprehensive logging**: Structured JSON logging with tracing
+- **Comprehensive logging**: Structured JSON logging
 - **Flexible configuration**: YAML config files or environment variables
-- **Alpine-based**: Minimal Docker image (~25-30MB)
 - **Environment variable precedence**: Env vars override config file settings
+- **Alpine-based**: Minimal Docker image (~25-30MB)
 
 ## Quick Start
 
@@ -30,19 +30,6 @@ docker build \
   --build-arg RUST_VERSION=1.87 \
   --build-arg ALPINE_VERSION=3.22 \
   -t redis-vault:latest .
-```
-
-The Docker image is based on Alpine Linux for a minimal footprint (~15MB base image vs ~80MB for Debian). The final image size is approximately 25-30MB.
-
-### Running with Docker Compose
-
-```bash
-# Set AWS credentials
-export AWS_ACCESS_KEY_ID=your-key
-export AWS_SECRET_ACCESS_KEY=your-secret
-
-# Start Redis with backup sidecar
-docker-compose up -f docker/docker-compose.yml
 ```
 
 ### Running in Kubernetes
@@ -64,11 +51,6 @@ The application can be configured via environment variables or YAML file. **Envi
 1. **Environment Variables** (highest priority)
 2. **Configuration File** (config.yaml)
 3. **Default Values** (lowest priority)
-
-This allows you to:
-- Use a base configuration file with environment-specific overrides
-- Deploy the same image with different configurations
-- Override specific settings without modifying files
 
 ### Configuration File (config.yaml)
 
@@ -141,25 +123,12 @@ redis-vault --config config.yaml
 
 ### Kubernetes StatefulSet Sidecar
 
-Best for production Redis deployments:
 - Shared volume between Redis and backup containers
 - Automatic restart on failure
 - Resource limits to prevent impact on Redis
-
-### Docker Compose
-
-Ideal for development and testing:
-- Easy local testing
-- Multiple Redis instances with different backup configs
-- Simulates production topology
-
-## Security Considerations
-
-1. **Least Privilege**: Backup container has read-only access to Redis data
-2. **IAM Roles**: Use IAM roles instead of keys when possible
-3. **Encryption**: Enable S3/GCS encryption at rest
-4. **Network Isolation**: Backup sidecar doesn't expose any ports
-5. **Non-root User**: Runs as unprivileged user in container
+- Backup container has read-only access to Redis data
+- Runs as unprivileged user in container
+- Use IAM roles instead of keys when possible
 
 ## License
 
