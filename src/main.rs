@@ -490,9 +490,7 @@ fn init_logging(config: &Config) {
                 .init();
         }
         _ => {
-            tracing_subscriber::fmt()
-                .with_env_filter(env_filter)
-                .init();
+            tracing_subscriber::fmt().with_env_filter(env_filter).init();
         }
     }
 }
