@@ -49,6 +49,7 @@ struct Config {
     backup: BackupConfig,
     storage: StorageConfig,
     retention: RetentionConfig,
+    logging: LoggingConfig,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -86,6 +87,12 @@ struct RetentionConfig {
     keep_last: usize,
     /// Keep backups newer than this duration (e.g., "7d", "30d")
     keep_duration: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct LoggingConfig {
+    /// Log format: "text" or "json"
+    format: String,
 }
 
 // Redis role detection
@@ -344,6 +351,9 @@ fn get_default_config() -> Config {
             keep_last: 7,
             keep_duration: None,
         },
+        logging: LoggingConfig {
+            format: "text".to_string(),
+        },
     }
 }
 
@@ -459,22 +469,45 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
         config.retention.keep_duration = Some(keep_duration);
     }
 
+    // Logging configuration overrides
+    if let Ok(log_format) = std::env::var("LOG_FORMAT") {
+        config.logging.format = log_format;
+    }
+
     Ok(config)
+}
+
+fn init_logging(config: &Config) {
+    let env_filter = tracing_subscriber::EnvFilter::from_default_env();
+
+    match config.logging.format.as_str() {
+        "json" => {
+            tracing_subscriber::fmt()
+                .with_env_filter(env_filter)
+                .json()
+                .flatten_event(true)
+                .without_time()
+                .init();
+        }
+        _ => {
+            tracing_subscriber::fmt()
+                .with_env_filter(env_filter)
+                .init();
+        }
+    }
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .json()
-        .init();
-
     // Parse arguments
     let args = Args::parse();
 
     // Load configuration
     let config = load_config(&args.config).await?;
+
+    // Initialize tracing with config
+    init_logging(&config);
+
     info!("Configuration loaded successfully");
     debug!("Config: {:?}", config);
 
