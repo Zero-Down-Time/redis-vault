@@ -44,20 +44,6 @@ def call(Map config=[:]) {
             // we always scan and create the full json report
             sh 'TRIVY_FORMAT=json TRIVY_OUTPUT="reports/trivy.json" make scan'
 
-            // render custom full html report
-            sh 'trivy convert -f template -t @/home/jenkins/html.tpl -o reports/trivy.html reports/trivy.json'
-
-            publishHTML target: [
-              allowMissing: true,
-              alwaysLinkToLastBuild: true,
-              keepAll: true,
-              reportDir: 'reports',
-              reportFiles: 'trivy.html',
-              reportName: 'TrivyScan',
-              reportTitles: 'TrivyScan'
-            ]
-            sh 'echo "Trivy report at: $BUILD_URL/TrivyScan"'
-
             // fail build if issues found above trivy threshold
             script {
               if ( config.trivyFail ) {
@@ -83,6 +69,12 @@ def call(Map config=[:]) {
             sh 'make clean'
           }
         }
+      }
+
+      post {
+          always {
+              recordIssues enabledForFailure: true, tool: trivy(pattern: 'reports/trivy.json')
+          }
       }
     }
   }
