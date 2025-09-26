@@ -7,7 +7,10 @@ ARG ALPINE_VERSION=3.22
 FROM rust:${RUST_VERSION}-alpine as builder
 
 # Install build dependencies
-RUN apk add --no-cache openssl-dev musl-dev
+RUN apk add --no-cache \
+  openssl-dev \
+  musl-dev \
+  cargo-auditable
 
 WORKDIR /app
 
@@ -20,14 +23,14 @@ ENV RUSTFLAGS='-C target-feature=-crt-static'
 # Build dependencies (this is cached as long as Cargo.toml doesn't change)
 RUN mkdir src && \
     echo "fn main() {}" > src/main.rs && \
-    cargo build --release && \
+    cargo auditable build --release && \
     rm -rf src
 
 # Copy source code
 COPY src ./src
 
 # Build application with static linking for Alpine
-RUN touch src/main.rs && cargo build --release
+RUN touch src/main.rs && cargo auditable build --release
 
 # Runtime stage
 FROM alpine:${ALPINE_VERSION}
