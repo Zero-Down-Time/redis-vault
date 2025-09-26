@@ -7,7 +7,7 @@ def call(Map config=[:]) {
       }
       agent {
         node {
-          label 'podman-aws-trivy'
+          label 'podman-aws-grype'
         }
       }
       stages {
@@ -42,15 +42,15 @@ def call(Map config=[:]) {
         stage('Scan') {
           steps {
             // we always scan and create the full json report
-            sh 'TRIVY_FORMAT=json TRIVY_OUTPUT="reports/trivy.json" make scan'
+            sh 'GRYPE_OUTPUT=json GRYPE_FILE="reports/grype-report.json" make scan'
 
-            // fail build if trivyFail is set, default is any ERROR marks build unstable
+            // fail build if grypeFail is set, default is any ERROR marks build unstable
             script {
-              def failBuild=config.trivyFail
+              def failBuild=config.grypeFail
               if (failBuild == null || failBuild.isEmpty()) {
-                  recordIssues enabledForFailure: true, tool: trivy(pattern: 'reports/trivy.json'), qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: 'NOTE']]
+                  recordIssues enabledForFailure: true, tool: grype(qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: 'NOTE']]
               } else {
-                  recordIssues enabledForFailure: true, tool: trivy(pattern: 'reports/trivy.json'), qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: 'FAILURE']]
+                  recordIssues enabledForFailure: true, tool: grype(qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: 'FAILURE']]
               }
             }
           }
