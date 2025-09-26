@@ -48,9 +48,9 @@ def call(Map config=[:]) {
             script {
               def failBuild=config.grypeFail
               if (failBuild == null || failBuild.isEmpty()) {
-                  recordIssues enabledForFailure: true, tool: grype(),qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: 'NOTE']]
+                  recordIssues enabledForFailure: true, tool: grype(), sourceCodeRetention: 'NEVER', skipPublishingChecks: true, qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: 'NOTE']]
               } else {
-                  recordIssues enabledForFailure: true, tool: grype(),qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: 'FAILURE']]
+                  recordIssues enabledForFailure: true, tool: grype(), sourceCodeRetention: 'NEVER', skipPublishingChecks: true, qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: 'FAILURE']]
               }
             }
           }
