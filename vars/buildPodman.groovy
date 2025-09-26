@@ -44,10 +44,13 @@ def call(Map config=[:]) {
             // we always scan and create the full json report
             sh 'TRIVY_FORMAT=json TRIVY_OUTPUT="reports/trivy.json" make scan'
 
-            // fail build if issues found above trivy threshold
+            // fail build if trivyFail is set, default is any ERROR marks build unstable
             script {
-              if ( config.trivyFail ) {
-                sh "TRIVY_SEVERITY=${config.trivyFail} trivy convert --report summary --exit-code 1 reports/trivy.json"
+              def failBuild=config.trivyFail
+              if (failBuild == null || failBuild.isEmpty()) {
+                  recordIssues enabledForFailure: true, tool: trivy(pattern: 'reports/trivy.json'), qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: 'NOTE']]
+              } else {
+                  recordIssues enabledForFailure: true, tool: trivy(pattern: 'reports/trivy.json'), qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: 'FAILURE']]
               }
             }
           }
@@ -70,11 +73,5 @@ def call(Map config=[:]) {
           }
         }
       }
-
-      post {
-          always {
-              recordIssues enabledForFailure: true, tool: trivy(pattern: 'reports/trivy.json')
-          }
-      }
     }
-  }
+}
