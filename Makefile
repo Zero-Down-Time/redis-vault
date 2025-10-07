@@ -4,13 +4,13 @@ REGION := us-east-1
 
 include .ci/podman.mk
 
-CRATE_VER = $(shell echo $$TAG | sed -e 's/^v//g')
-
-prepare::
-	sed -i -e "s/^version = \".*/version = \"$$CRATE_VER\"/" Cargo.toml
+bump-version::
+	. .ci/utils.sh && new_version=$$(bumpVersion $(TAG) | sed -e 's/^v//' )
+	sed -i -e "s/^version = \".*/version = \"$$new_version\"/" Cargo.toml
+	echo "set cargo package version to $$new_version in Cargo.toml"
 
 fmt::
-	which cargo >/dev/null 2>&1 && cargo fmt
+	which cargo >/dev/null 2>&1 && cargo fmt || echo "cargo unavailable. Noop"
 
 clean::
-	which cargo >/dev/null 2>&1 && cargo clean
+	which cargo >/dev/null 2>&1 && cargo clean || echo "cargo unavailable. Noop"
