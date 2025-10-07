@@ -8,6 +8,9 @@ SHELL := bash
 .PHONY: all # All targets are accessible for user
 .DEFAULT: help # Running Make will run the help target
 
+# macro to convert unknown targets into args
+args = `arg="$(filter-out $@,$(MAKECMDGOALS))" && echo $${arg:-${1}}`
+
 # Parse version from latest git semver tag, use short commit otherwise
 GIT_TAG ?= $(shell git describe --tags --match v*.*.* --dirty 2>/dev/null || git describe --match="" --always --dirty 2>/dev/null)
 GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
@@ -28,6 +31,10 @@ endif
 ARCH ::= amd64
 ALL_ARCHS ::= amd64 arm64
 _ARCH = $(or $(filter $(ARCH),$(ALL_ARCHS)),$(error $$ARCH [$(ARCH)] must be exactly one of "$(ALL_ARCHS)"))
+
+# Prevent errors for unknown targets used as args
+%:
+	@:
 
 help: ## Show Help
 	grep -E '^[a-zA-Z_-]+:.*?## .*$$' .ci/podman.mk | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
@@ -71,6 +78,21 @@ rm-remote-untagged: ## delete all remote untagged and in-dev images, keep 10 tag
 	.ci/ecr_public_lifecycle.py --repo $(IMAGE) --dev
 
 clean:: ## clean up source folder
+
+bump-version: ## bumps git tag using semVer
+	type=$(call args,patch)
+	if [ "$$type" == 'patch' ]; then
+		awkV='{OFS="."; $$NF+=1; print $$0}'
+	elif [ "$$type" == 'minor' ]; then
+		awkV='{OFS="."; $$2+=1; $$3=0; print $$0}'
+	elif [ "$$type" == 'major' ]; then
+		awkV='{OFS="."; $$1+=1; $$2=0; $$3=0; print "v"$$0}'
+	else
+		echo 'No version type specified.  Specify one of patch, minor, or major.'
+		exit 1
+	fi
+	newV=$$(echo $(TAG) | awk -F. "$$awkV")
+	git tag -a $$newV
 
 rm-image:
 	for t in $(TAG) latest $(EXTRA_TAGS); do
