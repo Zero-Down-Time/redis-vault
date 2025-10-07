@@ -287,7 +287,7 @@ impl BackupManager {
         let initial_delay = humantime::parse_duration(&self.config.backup.initial_delay)
             .map_err(|e| BackupError::Config(format!("Invalid initial_delay: {}", e)))?;
 
-        if initial_delay.as_secs() > 0 {
+        if !initial_delay.is_zero() {
             info!(
                 "Waiting for {} to allow Redis to setup replication",
                 self.config.backup.initial_delay
@@ -348,7 +348,7 @@ fn get_default_config() -> Config {
         backup: BackupConfig {
             interval: "1h".to_string(),
             dump_filename: "dump.rdb".to_string(),
-            initial_delay: "60s".to_string(),
+            initial_delay: "300s".to_string(),
         },
         storage: StorageConfig::S3(S3Config {
             bucket: "redis-vault".to_string(),

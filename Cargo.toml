@@ -2,6 +2,9 @@
 name = "redis-vault"
 version = "0.1.0"
 edition = "2024"
+repository = "https://git.zero-downtime.net/ZeroDownTime/redis-vault"
+license = "AGPL-3.0-or-later"
+keywords = ["redis", "kubernetes", "sidecar"]
 
 [dependencies]
 tokio = { version = "1.35", features = ["full"] }

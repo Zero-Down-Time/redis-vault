@@ -65,7 +65,7 @@ redis:
 backup:
   interval: "1h"
   dump_filename: "dump.rdb"
-  initial_delay: 60s
+  initial_delay: 300s
 
 storage:
   type: S3  # or GCS
