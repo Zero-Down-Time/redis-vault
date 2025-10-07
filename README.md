@@ -65,6 +65,7 @@ redis:
 backup:
   interval: "1h"
   dump_filename: "dump.rdb"
+  initial_delay: 60s
 
 storage:
   type: S3  # or GCS
@@ -86,19 +87,18 @@ logging:
 Backup files are automatically named using the following structure:
 
 ```
-{prefix}/{node_name}_{timestamp}_{file_modification_epoch}.rdb
+{prefix}/{node_name}_{timestamp}.rdb
 ```
 
 **Example filename:**
 ```
-redis-vault/redis-master-01_20241201_143022_1733065822.rdb
+redis-vault/redis-master-01_20241201_143022.rdb
 ```
 
 **Components:**
 - `prefix`: Storage prefix from configuration (e.g., "redis-vault")
 - `node_name`: Redis node identifier (e.g., "redis-master-01")
 - `timestamp`: Backup creation time in YYYYMMDD_HHMMSS format
-- `file_modification_epoch`: Unix timestamp of when the dump.rdb file was last modified
 - `.rdb`: File extension
 
 ### Environment Variables
@@ -113,6 +113,7 @@ Environment variables **override** any values set in the configuration file. Thi
 | `BACKUP_MASTER` | Backup if node is master | `true` |
 | `BACKUP_REPLICA` | Backup if node is replica | `true` |
 | `BACKUP_INTERVAL` | Time between backup checks | `1h` |
+| `INITIAL_DELAY` | Initial time to allow replication to setup | `60s` |
 | `DUMP_FILENAME` | Redis dump filename | `dump.rdb` |
 | `STORAGE_TYPE` | Storage backend (`s3` or `gcs`) | `s3` |
 | `S3_BUCKET` | S3 bucket name | `redis-vault` |

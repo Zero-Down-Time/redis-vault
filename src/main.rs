@@ -198,10 +198,6 @@ impl BackupManager {
             return Ok(());
         }
 
-        // Get file metadata
-        let metadata = fs::metadata(&dump_path).await?;
-        let modified = metadata.modified()?;
-
         // Read dump file
         info!("Reading dump file: {:?}", dump_path);
         let data = fs::read(&dump_path).await?;
@@ -215,11 +211,10 @@ impl BackupManager {
         };
 
         let key = format!(
-            "{}/{}_{}_{}.rdb",
+            "{}/{}_{}.rdb",
             prefix.trim_end_matches('/'),
             self.config.redis.node_name,
-            timestamp,
-            modified.duration_since(std::time::UNIX_EPOCH)?.as_secs()
+            timestamp
         );
 
         // Upload to storage

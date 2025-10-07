@@ -5,7 +5,7 @@ REGION := us-east-1
 include .ci/podman.mk
 
 fmt::
-	cargo fmt
+	which cargo > /dev/null && cargo fmt
 
 clean::
-	cargo clean
+	which cargo > /dev/null && cargo clean
