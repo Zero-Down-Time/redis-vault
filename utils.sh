@@ -1,5 +1,5 @@
 # bumps git tag using semVer
-bump-version() {
+bumpVersion() {
   V=$1
 	type=${2:-patch}
 
