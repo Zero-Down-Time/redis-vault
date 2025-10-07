@@ -6,3 +6,6 @@ include .ci/podman.mk
 
 fmt::
 	cargo fmt
+
+clean::
+	cargo clean

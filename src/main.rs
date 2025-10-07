@@ -72,6 +72,8 @@ struct BackupConfig {
     interval: String,
     /// Filename pattern for dump file
     dump_filename: String,
+    /// Initial delay to give Redis replication a chance to set up
+    initial_delay: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -287,6 +289,17 @@ impl BackupManager {
         let interval = humantime::parse_duration(&self.config.backup.interval)
             .map_err(|e| BackupError::Config(format!("Invalid interval: {}", e)))?;
 
+        let initial_delay = humantime::parse_duration(&self.config.backup.initial_delay)
+            .map_err(|e| BackupError::Config(format!("Invalid initial_delay: {}", e)))?;
+
+        if initial_delay.as_secs() > 0 {
+            info!(
+                "Waiting for {} to allow Redis to setup replication",
+                self.config.backup.initial_delay
+            );
+            time::sleep(initial_delay).await;
+        }
+
         loop {
             match self.perform_backup().await {
                 Ok(()) => debug!("Backup cycle completed successfully"),
@@ -340,6 +353,7 @@ fn get_default_config() -> Config {
         backup: BackupConfig {
             interval: "1h".to_string(),
             dump_filename: "dump.rdb".to_string(),
+            initial_delay: "60s".to_string(),
         },
         storage: StorageConfig::S3(S3Config {
             bucket: "redis-vault".to_string(),
@@ -382,6 +396,9 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
     }
     if let Ok(dump_filename) = std::env::var("DUMP_FILENAME") {
         config.backup.dump_filename = dump_filename;
+    }
+    if let Ok(initial_delay) = std::env::var("INITIAL_DELAY") {
+        config.backup.initial_delay = initial_delay;
     }
 
     // Storage configuration overrides
