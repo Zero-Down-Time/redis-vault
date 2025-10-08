@@ -200,7 +200,7 @@ impl BackupManager {
         }
 
         // Read dump file
-        info!("Reading dump file: {:?}", dump_path);
+        debug!("Reading dump file: {:?}", dump_path);
         let data = fs::read(&dump_path).await?;
         let data_bytes = bytes::Bytes::from(data);
 
@@ -219,7 +219,7 @@ impl BackupManager {
         );
 
         // Upload to storage
-        info!("Uploading backup to: {}", key);
+        debug!("Uploading backup to: {}", key);
         self.storage.upload(&key, data_bytes).await?;
         info!("Backup uploaded successfully: {}", key);
 
