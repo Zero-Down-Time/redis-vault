@@ -16,3 +16,20 @@ bumpVersion() {
 
 	echo $V | awk -F. "$awkV"
 }
+
+
+# add resources, commits and tags them, before pushing
+addCommitTagPush() {
+  OBS="$1"
+  V="$2"
+
+  if [ -n "$OBS" ]; then
+    git add "$OBS"
+    git commit -m"ci: bump, tag and push version $V"
+  fi
+
+  if [ -n "$V" ]; then
+    git tag -a "$V" -m"Release: $V"
+    git push && git push --tags
+  fi
+}
