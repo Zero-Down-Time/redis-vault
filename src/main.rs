@@ -5,6 +5,7 @@ use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 use tokio::fs;
 use tokio::time;
 use tracing::{debug, error, info, warn};
@@ -289,13 +290,30 @@ impl BackupManager {
 
         if !initial_delay.is_zero() {
             info!(
-                "Waiting for {} to allow Redis to setup replication",
+                "Initially waiting for {} to allow for Redis to setup replication",
                 self.config.backup.initial_delay
             );
             time::sleep(initial_delay).await;
         }
 
         loop {
+            if !once {
+                // calculate seconds till next execution time slot using UNIX timestamp as reference
+                let next_interval = Duration::new(
+                    (interval.as_secs() as i64 - Utc::now().timestamp() % interval.as_secs() as i64)
+                        as u64,
+                    0,
+                );
+
+                info!(
+                    "Next backup at {}",
+                    humantime::format_rfc3339_seconds(SystemTime::now() + next_interval)
+                );
+
+                // wait for remaining time
+                time::sleep(next_interval).await;
+            }
+
             match self.perform_backup().await {
                 Ok(()) => debug!("Backup cycle completed successfully"),
                 Err(e) => error!("Backup failed: {}", e),
@@ -304,8 +322,6 @@ impl BackupManager {
             if once {
                 break;
             }
-
-            time::sleep(interval).await;
         }
 
         Ok(())
