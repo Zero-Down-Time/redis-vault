@@ -25,7 +25,7 @@ addCommitTagPush() {
 
   if [ -n "$OBS" ]; then
     git add "$OBS"
-    git commit -m "ci: bump, tag and push version $V"
+    git commit -m "ci: bump, tag and push version $V" || true
   fi
 
   if [ -n "$V" ]; then
