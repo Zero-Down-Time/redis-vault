@@ -5,12 +5,15 @@ use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 use tokio::fs;
+use tokio::sync::RwLock;
 use tokio::time;
 use tracing::{debug, error, info, warn};
 
+mod metrics;
 mod storage;
+use metrics::Metrics;
 use storage::StorageBackend;
 use storage::gcs::{GcsConfig, GcsStorage};
 use storage::s3::{S3Config, S3Storage};
@@ -51,6 +54,7 @@ struct Config {
     storage: StorageConfig,
     retention: RetentionConfig,
     logging: LoggingConfig,
+    metrics: MetricsConfig,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -98,6 +102,16 @@ struct LoggingConfig {
     format: String,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct MetricsConfig {
+    /// Enable metrics endpoint
+    enabled: bool,
+    /// Port for metrics server
+    port: u16,
+    /// Listen address for metrics server
+    listen_address: String,
+}
+
 // Redis role detection
 #[derive(Debug, PartialEq)]
 enum RedisRole {
@@ -131,10 +145,11 @@ struct BackupManager {
     config: Config,
     storage: Arc<dyn StorageBackend>,
     redis_conn: Option<ConnectionManager>,
+    metrics: Arc<RwLock<Metrics>>,
 }
 
 impl BackupManager {
-    async fn new(config: Config) -> Result<Self> {
+    async fn new(config: Config, metrics: Arc<RwLock<Metrics>>) -> Result<Self> {
         // Create storage backend
         let storage: Arc<dyn StorageBackend> = match &config.storage {
             StorageConfig::S3(s3_config) => Arc::new(S3Storage::new(s3_config).await?),
@@ -153,6 +168,7 @@ impl BackupManager {
             config,
             storage,
             redis_conn,
+            metrics,
         })
     }
 
@@ -180,6 +196,11 @@ impl BackupManager {
     }
 
     async fn perform_backup(&mut self) -> Result<()> {
+        let start_time = Instant::now();
+        let metrics = self.metrics.write().await;
+        metrics.backups_total.inc();
+        drop(metrics);
+
         // Check if we should backup based on role
         if !self.should_backup().await? {
             info!("Skipping backup based on Redis role configuration");
@@ -199,37 +220,86 @@ impl BackupManager {
             return Ok(());
         }
 
-        // Read dump file
-        debug!("Reading dump file: {:?}", dump_path);
-        let data = fs::read(&dump_path).await?;
-        let data_bytes = bytes::Bytes::from(data);
+        let backup_result = async {
+            // Read dump file
+            debug!("Reading dump file: {:?}", dump_path);
+            let data = fs::read(&dump_path).await?;
+            let data_size = data.len() as f64;
+            let data_bytes = bytes::Bytes::from(data);
 
-        // Generate backup key
-        let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
-        let prefix = match &self.config.storage {
-            StorageConfig::S3(cfg) => &cfg.prefix,
-            StorageConfig::GCS(cfg) => &cfg.prefix,
-        };
+            // Generate backup key
+            let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
+            let prefix = match &self.config.storage {
+                StorageConfig::S3(cfg) => &cfg.prefix,
+                StorageConfig::GCS(cfg) => &cfg.prefix,
+            };
 
-        let key = format!(
-            "{}/{}_{}.rdb",
-            prefix.trim_end_matches('/'),
-            self.config.redis.node_name,
-            timestamp
-        );
+            let key = format!(
+                "{}/{}_{}.rdb",
+                prefix.trim_end_matches('/'),
+                self.config.redis.node_name,
+                timestamp
+            );
 
-        // Upload to storage
-        debug!("Uploading backup to: {}", key);
-        self.storage.upload(&key, data_bytes).await?;
-        info!("Backup uploaded successfully: {}", key);
+            // Upload to storage
+            debug!("Uploading backup to: {}", key);
 
-        // Cleanup old backups
-        self.cleanup_old_backups().await?;
+            match self.storage.upload(&key, data_bytes).await {
+                Ok(()) => {
+                    info!("Backup uploaded successfully: {}", key);
 
-        Ok(())
+                    // Record successful upload metrics
+                    let metrics = self.metrics.write().await;
+                    metrics
+                        .storage_uploads_total
+                        .with_label_values(&["success"])
+                        .inc();
+                    metrics.backup_size_bytes.observe(data_size);
+                    metrics
+                        .last_backup_timestamp
+                        .set(Utc::now().timestamp() as f64);
+
+                    Ok(())
+                }
+                Err(e) => {
+                    let metrics = self.metrics.write().await;
+                    metrics
+                        .storage_uploads_total
+                        .with_label_values(&["failure"])
+                        .inc();
+                    Err(e)
+                }
+            }
+        }
+        .await;
+
+        // Record backup operation metrics
+        let duration = start_time.elapsed().as_secs_f64();
+        let metrics = self.metrics.write().await;
+        metrics.backup_duration_seconds.observe(duration);
+
+        match backup_result {
+            Ok(()) => {
+                metrics.backups_successful.inc();
+
+                // Cleanup old backups
+                drop(metrics);
+                self.cleanup_old_backups().await?;
+
+                Ok(())
+            }
+            Err(e) => {
+                metrics.backups_failed.inc();
+                Err(e)
+            }
+        }
     }
 
     async fn cleanup_old_backups(&self) -> Result<()> {
+        let metrics = self.metrics.write().await;
+        metrics.cleanup_operations_total.inc();
+        drop(metrics);
+
         let prefix = match &self.config.storage {
             StorageConfig::S3(cfg) => &cfg.prefix,
             StorageConfig::GCS(cfg) => &cfg.prefix,
@@ -269,12 +339,36 @@ impl BackupManager {
         }
 
         // Delete backups not in keep set
+        let mut deleted_count = 0;
         for (i, backup) in backups.iter().enumerate() {
             if !keep_indices.contains(&i) {
                 info!("Deleting old backup: {}", backup.key);
-                if let Err(e) = self.storage.delete(&backup.key).await {
-                    error!("Failed to delete backup {}: {}", backup.key, e);
+
+                let metrics = self.metrics.write().await;
+                match self.storage.delete(&backup.key).await {
+                    Ok(()) => {
+                        metrics
+                            .storage_deletes_total
+                            .with_label_values(&["success"])
+                            .inc();
+                        deleted_count += 1;
+                    }
+                    Err(e) => {
+                        error!("Failed to delete backup {}: {}", backup.key, e);
+                        metrics
+                            .storage_deletes_total
+                            .with_label_values(&["failure"])
+                            .inc();
+                    }
                 }
+                drop(metrics);
+            }
+        }
+
+        if deleted_count > 0 {
+            let metrics = self.metrics.write().await;
+            for _ in 0..deleted_count {
+                metrics.backups_deleted_total.inc();
             }
         }
 
@@ -378,6 +472,11 @@ fn get_default_config() -> Config {
         },
         logging: LoggingConfig {
             format: "text".to_string(),
+        },
+        metrics: MetricsConfig {
+            enabled: false,
+            port: 9090,
+            listen_address: "0.0.0.0".to_string(),
         },
     }
 }
@@ -502,6 +601,17 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
         config.logging.format = log_format;
     }
 
+    // Metrics configuration overrides
+    if let Ok(metrics_enabled) = std::env::var("METRICS_ENABLED") {
+        config.metrics.enabled = metrics_enabled.parse().unwrap_or(true);
+    }
+    if let Ok(metrics_port) = std::env::var("METRICS_PORT") {
+        config.metrics.port = metrics_port.parse().unwrap_or(9090);
+    }
+    if let Ok(metrics_address) = std::env::var("METRICS_LISTEN_ADDRESS") {
+        config.metrics.listen_address = metrics_address;
+    }
+
     Ok(config)
 }
 
@@ -535,14 +645,40 @@ async fn main() -> Result<()> {
     // Initialize tracing with config
     init_logging(&config);
 
-    info!("Configuration loaded successfully");
     debug!("Config: {:?}", config);
 
+    // Initialize metrics
+    let metrics = Arc::new(RwLock::new(Metrics::new()?));
+    debug!("Metrics initialized");
+
+    // Start metrics server if enabled
+    let metrics_handle = if config.metrics.enabled {
+        let metrics_clone = metrics.clone();
+        let port = config.metrics.port;
+        let listen_address = config.metrics.listen_address.clone();
+
+        let handle = tokio::spawn(async move {
+            if let Err(e) = metrics::start_metrics_server(metrics_clone, port, &listen_address).await {
+                error!("Metrics server failed: {}", e);
+            }
+        });
+
+        Some(handle)
+    } else {
+        info!("Metrics server disabled");
+        None
+    };
+
     // Create and run backup manager
-    let mut manager = BackupManager::new(config).await?;
-    info!("Backup manager initialized");
+    let mut manager = BackupManager::new(config, metrics).await?;
 
-    manager.run(args.once).await?;
+    // Run backup manager
+    let backup_result = manager.run(args.once).await;
 
-    Ok(())
+    // If we started a metrics server, we should shut it down gracefully
+    if let Some(handle) = metrics_handle {
+        handle.abort();
+    }
+
+    backup_result
 }
