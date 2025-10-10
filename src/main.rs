@@ -100,6 +100,8 @@ struct RetentionConfig {
 struct LoggingConfig {
     /// Log format: "text" or "json"
     format: String,
+    // debug, error, info, warn
+    level: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -472,6 +474,7 @@ fn get_default_config() -> Config {
         },
         logging: LoggingConfig {
             format: "text".to_string(),
+            level: "info".to_string(),
         },
         metrics: MetricsConfig {
             enabled: false,
@@ -600,6 +603,9 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
     if let Ok(log_format) = std::env::var("LOG_FORMAT") {
         config.logging.format = log_format;
     }
+    if let Ok(log_level) = std::env::var("LOG_LEVEL") {
+        config.logging.level = log_level;
+    }
 
     // Metrics configuration overrides
     if let Ok(metrics_enabled) = std::env::var("METRICS_ENABLED") {
@@ -617,7 +623,10 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
 
 fn init_logging(config: &Config) {
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+        .unwrap_or_else(|_| {
+            tracing_subscriber::EnvFilter::new("warn")
+                .add_directive(format!("redis_vault={}", config.logging.level).parse().unwrap())
+        });
 
     match config.logging.format.as_str() {
         "json" => {
@@ -626,12 +635,25 @@ fn init_logging(config: &Config) {
                 .json()
                 .flatten_event(true)
                 .without_time()
+                .with_target(false)
                 .init();
         }
         _ => {
-            tracing_subscriber::fmt().with_env_filter(env_filter).init();
+            tracing_subscriber::fmt().with_env_filter(env_filter).with_target(false).init();
         }
     }
+}
+
+fn spawn_metrics_server(
+    metrics: Arc<RwLock<metrics::Metrics>>,
+    port: u16,
+    listen_address: String,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        if let Err(e) = metrics::start_metrics_server(metrics, port, listen_address).await {
+            error!("Metrics server failed: {}", e);
+        }
+    })
 }
 
 #[tokio::main]
@@ -653,17 +675,11 @@ async fn main() -> Result<()> {
 
     // Start metrics server if enabled
     let metrics_handle = if config.metrics.enabled {
-        let metrics_clone = metrics.clone();
-        let port = config.metrics.port;
-        let listen_address = config.metrics.listen_address.clone();
-
-        let handle = tokio::spawn(async move {
-            if let Err(e) = metrics::start_metrics_server(metrics_clone, port, &listen_address).await {
-                error!("Metrics server failed: {}", e);
-            }
-        });
-
-        Some(handle)
+        Some(spawn_metrics_server(
+            metrics.clone(),
+            config.metrics.port,
+            config.metrics.listen_address.clone(),
+        ))
     } else {
         info!("Metrics server disabled");
         None

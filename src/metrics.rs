@@ -129,8 +129,16 @@ impl Metrics {
     }
 }
 
-pub async fn start_metrics_server(metrics: Arc<RwLock<Metrics>>, port: u16, listen_address: &str) -> Result<()> {
-    let metrics_route = warp::path("metrics").and(warp::get()).and_then(move || {
+pub async fn start_metrics_server(
+    metrics: Arc<RwLock<Metrics>>,
+    port: u16,
+    listen_address: String,
+) -> Result<()> {
+    let addr = listen_address
+        .parse::<std::net::IpAddr>()
+        .map_err(|e| anyhow::anyhow!("Invalid listen address: {}", e))?;
+
+    let metrics_route = warp::path!("metrics").and(warp::get()).and_then(move || {
         let metrics = metrics.clone();
         async move {
             let metrics = metrics.read().await;
@@ -145,13 +153,11 @@ pub async fn start_metrics_server(metrics: Arc<RwLock<Metrics>>, port: u16, list
         }
     });
 
-    let health_route = warp::path("health").and(warp::get()).map(|| "OK");
+    let health_route = warp::path!("health")
+        .and(warp::get())
+        .map(|| warp::reply::with_status(String::from("OK"), warp::http::StatusCode::OK));
 
     let routes = metrics_route.or(health_route);
-
-    // Parse the listen address
-    let addr = listen_address.parse::<std::net::IpAddr>()
-        .map_err(|e| anyhow::anyhow!("Invalid listen address '{}': {}", listen_address, e))?;
 
     tracing::info!("Starting metrics server on {}:{}", addr, port);
     warp::serve(routes).run((addr, port)).await;
