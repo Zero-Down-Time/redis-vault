@@ -622,11 +622,13 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
 }
 
 fn init_logging(config: &Config) {
-    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| {
-            tracing_subscriber::EnvFilter::new("warn")
-                .add_directive(format!("redis_vault={}", config.logging.level).parse().unwrap())
-        });
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        tracing_subscriber::EnvFilter::new("warn").add_directive(
+            format!("redis_vault={}", config.logging.level)
+                .parse()
+                .unwrap(),
+        )
+    });
 
     match config.logging.format.as_str() {
         "json" => {
@@ -639,7 +641,10 @@ fn init_logging(config: &Config) {
                 .init();
         }
         _ => {
-            tracing_subscriber::fmt().with_env_filter(env_filter).with_target(false).init();
+            tracing_subscriber::fmt()
+                .with_env_filter(env_filter)
+                .with_target(false)
+                .init();
         }
     }
 }
