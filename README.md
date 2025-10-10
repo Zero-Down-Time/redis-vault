@@ -56,31 +56,78 @@ The application can be configured via environment variables or YAML file. **Envi
 
 ```yaml
 redis:
+  # Redis connection string
   connection_string: "redis://localhost:6379"
+
+  # Path to Redis data directory containing dump.rdb
   data_path: "/data"
-  node_name: "redis-node"
-  backup_master: true
-  backup_replica: true
+
+  # Unique name for this Redis node
+  node_name: "redis-master-01"
+
+  # Backup configuration based on Redis role
+  backup_master: true      # Backup if this node is a master
+  backup_replica: false    # Backup if this node is a replica
 
 backup:
+  # Interval between backup checks
+  # Supports formats like: 30s, 5m, 1h, 6h, 1d
   interval: "1h"
-  dump_filename: "dump.rdb"
-  initial_delay: 300s
 
+  # Filename of the Redis dump file
+  dump_filename: "dump.rdb"
+
+  # Initial delay before starting backups (allows Redis replication to stabilize)
+  # Supports formats like: 30s, 5m, 10m
+  initial_delay: "300s"
+
+# Storage backend configuration
+# Choose either S3 or GCS
+
+# S3 Configuration
 storage:
-  type: S3  # or GCS
-  bucket: "redis-vault"
-  prefix: "redis-vault"
-  region: null
-  endpoint: null
+  type: S3
+  bucket: "my-redis-vault"
+  prefix: "production/redis"
+  # Optional: specify region (uses default AWS config if not set)
+  region: "us-west-2"
+  # Optional: custom S3 endpoint for S3-compatible services (MinIO, etc.)
+  # endpoint: "http://minio:9000"
+
+# GCS Configuration (alternative)
+# storage:
+#   type: GCS
+#   bucket: "my-redis-vault"
+#   prefix: "production/redis"
+#   # Optional: specify project ID
+#   project_id: "my-gcp-project"
 
 retention:
+  # Number of recent backups to keep
   keep_last: 7
-  keep_duration: null
+
+  # Keep backups newer than this duration
+  # Supports formats like: 7d, 30d, 1w
+  keep_duration: "30d"
 
 logging:
-  format: "text"  # or "json"
-  level: "info"   # trace, debug, info, warn, error
+  # Log format: "text" or "json"
+  format: "text"
+
+  # Application log level: trace, debug, info, warn, error
+  # Note: Default log level for other crates is set to "warn"
+  # Use RUST_LOG environment variable to override all log levels
+  level: "info"
+
+metrics:
+  # Enable Prometheus metrics endpoint
+  enabled: false
+
+  # Port for metrics server
+  port: 9090
+
+  # Listen address for metrics server
+  listen_address: "0.0.0.0"
 ```
 
 ### Backup File Naming
