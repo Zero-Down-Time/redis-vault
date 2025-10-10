@@ -80,6 +80,7 @@ retention:
 
 logging:
   format: "text"  # or "json"
+  level: "info"   # trace, debug, info, warn, error
 ```
 
 ### Backup File Naming
@@ -126,7 +127,11 @@ Environment variables **override** any values set in the configuration file. Thi
 | `RETENTION_KEEP_LAST` | Number of recent backups to keep | `7` |
 | `RETENTION_KEEP_DURATION` | Keep backups newer than | None |
 | `LOG_FORMAT` | Log format (`text` or `json`) | `text` |
-| `RUST_LOG` | Log level | `info` |
+| `LOG_LEVEL` | Application log level (`trace`, `debug`, `info`, `warn`, `error`) | `info` |
+| `RUST_LOG` | Override all log levels (takes precedence over LOG_LEVEL) | None |
+| `METRICS_ENABLED` | Enable Prometheus metrics endpoint | `false` |
+| `METRICS_PORT` | Port for metrics server | `9090` |
+| `METRICS_LISTEN_ADDRESS` | Listen address for metrics server | `0.0.0.0` |
 
 ### Configuration Override Example
 

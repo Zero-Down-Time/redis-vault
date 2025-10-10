@@ -44,7 +44,26 @@ storage:
 retention:
   # Number of recent backups to keep
   keep_last: 7
-  
+
   # Keep backups newer than this duration
   # Supports formats like: 7d, 30d, 1w
   keep_duration: "30d"
+
+logging:
+  # Log format: "text" or "json"
+  format: "text"
+
+  # Application log level: trace, debug, info, warn, error
+  # Note: Default log level for other crates is set to "warn"
+  # Use RUST_LOG environment variable to override all log levels
+  level: "info"
+
+metrics:
+  # Enable Prometheus metrics endpoint
+  enabled: false
+
+  # Port for metrics server
+  port: 9090
+
+  # Listen address for metrics server
+  listen_address: "0.0.0.0"
