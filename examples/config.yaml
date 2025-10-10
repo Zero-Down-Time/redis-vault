@@ -16,9 +16,13 @@ backup:
   # Interval between backup checks
   # Supports formats like: 30s, 5m, 1h, 6h, 1d
   interval: "1h"
-  
+
   # Filename of the Redis dump file
   dump_filename: "dump.rdb"
+
+  # Initial delay before starting backups (allows Redis replication to stabilize)
+  # Supports formats like: 30s, 5m, 10m
+  initial_delay: "300s"
 
 # Storage backend configuration
 # Choose either S3 or GCS
