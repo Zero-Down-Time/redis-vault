@@ -140,14 +140,16 @@ Backup files are automatically named using the following structure:
 
 **Example filename:**
 ```
-redis-vault/redis-master-01_20241201_143022.rdb
+redis-vault/redis-master-01_2024-12-01T14:30:22Z.rdb
 ```
 
 **Components:**
 - `prefix`: Storage prefix from configuration (e.g., "redis-vault")
 - `node_name`: Redis node identifier (e.g., "redis-master-01")
-- `timestamp`: Backup creation time in YYYYMMDD_HHMMSS format
+- `timestamp`: File modification time in RFC3339 format (ISO 8601)
 - `.rdb`: File extension
+
+**Note:** The timestamp reflects the Redis dump file's last modification time, ensuring backups are named based on when the data was actually created by Redis, not when the backup process ran.
 
 ### Environment Variables
 

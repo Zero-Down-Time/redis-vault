@@ -1,7 +1,5 @@
 use anyhow::Result;
-use prometheus::{
-    CounterVec, Encoder, Gauge, Histogram, HistogramOpts, IntCounter, Registry, TextEncoder,
-};
+use prometheus::{Encoder, Gauge, Histogram, HistogramOpts, IntCounter, Registry, TextEncoder};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use warp::Filter;
@@ -21,8 +19,8 @@ pub struct Metrics {
     pub last_backup_timestamp: Gauge,
 
     // Storage operations
-    pub storage_uploads_total: CounterVec,
-    pub storage_deletes_total: CounterVec,
+    pub storage_uploads_total: IntCounter,
+    pub storage_deletes_total: IntCounter,
 
     // Cleanup operations
     pub cleanup_operations_total: IntCounter,
@@ -66,20 +64,14 @@ impl Metrics {
         )?;
 
         // Storage operations
-        let storage_uploads_total = CounterVec::new(
-            prometheus::Opts::new(
-                "redis_vault_storage_uploads_total",
-                "Total number of storage upload operations by storage type",
-            ),
-            &["storage_type", "status"],
+        let storage_uploads_total = IntCounter::new(
+            "redis_vault_storage_uploads_total",
+            "Total number of storage upload operations by storage type",
         )?;
 
-        let storage_deletes_total = CounterVec::new(
-            prometheus::Opts::new(
-                "redis_vault_storage_deletes_total",
-                "Total number of storage delete operations by storage type",
-            ),
-            &["storage_type", "status"],
+        let storage_deletes_total = IntCounter::new(
+            "redis_vault_storage_deletes_total",
+            "Total number of storage delete operations by storage type",
         )?;
 
         // Cleanup operations

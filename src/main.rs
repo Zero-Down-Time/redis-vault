@@ -223,6 +223,10 @@ impl BackupManager {
         }
 
         let backup_result = async {
+            // Get file metadata
+            let metadata = fs::metadata(&dump_path).await?;
+            let modified = metadata.modified()?;
+
             // Read dump file
             debug!("Reading dump file: {:?}", dump_path);
             let data = fs::read(&dump_path).await?;
@@ -230,7 +234,6 @@ impl BackupManager {
             let data_bytes = bytes::Bytes::from(data);
 
             // Generate backup key
-            let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
             let prefix = match &self.config.storage {
                 StorageConfig::S3(cfg) => &cfg.prefix,
                 StorageConfig::GCS(cfg) => &cfg.prefix,
@@ -240,7 +243,7 @@ impl BackupManager {
                 "{}/{}_{}.rdb",
                 prefix.trim_end_matches('/'),
                 self.config.redis.node_name,
-                timestamp
+                humantime::format_rfc3339_seconds(modified).to_string()
             );
 
             // Upload to storage
@@ -252,10 +255,7 @@ impl BackupManager {
 
                     // Record successful upload metrics
                     let metrics = self.metrics.write().await;
-                    metrics
-                        .storage_uploads_total
-                        .with_label_values(&["success"])
-                        .inc();
+                    metrics.storage_uploads_total.inc();
                     metrics.backup_size_bytes.observe(data_size);
                     metrics
                         .last_backup_timestamp
@@ -265,10 +265,7 @@ impl BackupManager {
                 }
                 Err(e) => {
                     let metrics = self.metrics.write().await;
-                    metrics
-                        .storage_uploads_total
-                        .with_label_values(&["failure"])
-                        .inc();
+                    metrics.storage_uploads_total.inc();
                     Err(e)
                 }
             }
@@ -349,18 +346,12 @@ impl BackupManager {
                 let metrics = self.metrics.write().await;
                 match self.storage.delete(&backup.key).await {
                     Ok(()) => {
-                        metrics
-                            .storage_deletes_total
-                            .with_label_values(&["success"])
-                            .inc();
+                        metrics.storage_deletes_total.inc();
                         deleted_count += 1;
                     }
                     Err(e) => {
                         error!("Failed to delete backup {}: {}", backup.key, e);
-                        metrics
-                            .storage_deletes_total
-                            .with_label_values(&["failure"])
-                            .inc();
+                        metrics.storage_deletes_total.inc();
                     }
                 }
                 drop(metrics);
