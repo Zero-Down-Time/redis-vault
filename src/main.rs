@@ -243,7 +243,7 @@ impl BackupManager {
                 "{}/{}_{}.rdb",
                 prefix.trim_end_matches('/'),
                 self.config.redis.node_name,
-                humantime::format_rfc3339_seconds(modified).to_string()
+                humantime::format_rfc3339_seconds(modified)
             );
 
             // Upload to storage

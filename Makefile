@@ -12,7 +12,7 @@ bump-version::
 	addCommitTagPush Cargo.toml v$$new_version
 
 fmt::
-	which cargo >/dev/null 2>&1 && cargo fmt || echo "cargo unavailable. Noop"
+	cargo fmt || echo "cargo unavailable. Noop"
 
 clean::
-	which cargo >/dev/null 2>&1 && cargo clean || echo "cargo unavailable. Noop"
+	cargo clean || echo "cargo unavailable. Noop"
