@@ -82,11 +82,11 @@ backup:
   initial_delay: "300s"
 
 # Storage backend configuration
-# Choose either S3 or GCS
+# Choose either s3 or gcs
 
 # S3 Configuration
 storage:
-  type: S3
+  type: s3
   bucket: "my-redis-vault"
   prefix: "production/redis"
   # Optional: specify region (uses default AWS config if not set)
@@ -96,7 +96,7 @@ storage:
 
 # GCS Configuration (alternative)
 # storage:
-#   type: GCS
+#   type: gcs
 #   bucket: "my-redis-vault"
 #   prefix: "production/redis"
 #   # Optional: specify project ID

@@ -3,6 +3,7 @@ use chrono::Utc;
 use clap::Parser;
 use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
@@ -57,7 +58,7 @@ struct Config {
     metrics: MetricsConfig,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 struct RedisConfig {
     /// Redis connection string
     connection_string: String,
@@ -69,6 +70,17 @@ struct RedisConfig {
     backup_master: bool,
     /// Backup from replica nodes
     backup_replica: bool,
+}
+
+// custom Debug for potentially sensitive connection_string
+impl fmt::Debug for RedisConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RedisConfig")
+            .field("connection_string", &"[REDACTED]")
+            .field("data_path", &self.data_path)
+            .field("node_name", &self.node_name)
+            .finish()
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -85,7 +97,7 @@ struct BackupConfig {
 #[serde(tag = "type")]
 enum StorageConfig {
     S3(S3Config),
-    GCS(GcsConfig),
+    Gcs(GcsConfig),
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -155,7 +167,7 @@ impl BackupManager {
         // Create storage backend
         let storage: Arc<dyn StorageBackend> = match &config.storage {
             StorageConfig::S3(s3_config) => Arc::new(S3Storage::new(s3_config).await?),
-            StorageConfig::GCS(gcs_config) => Arc::new(GcsStorage::new(gcs_config).await?),
+            StorageConfig::Gcs(gcs_config) => Arc::new(GcsStorage::new(gcs_config).await?),
         };
 
         // Create Redis connection if needed
@@ -236,7 +248,7 @@ impl BackupManager {
             // Generate backup key
             let prefix = match &self.config.storage {
                 StorageConfig::S3(cfg) => &cfg.prefix,
-                StorageConfig::GCS(cfg) => &cfg.prefix,
+                StorageConfig::Gcs(cfg) => &cfg.prefix,
             };
 
             let key = format!(
@@ -301,7 +313,7 @@ impl BackupManager {
 
         let prefix = match &self.config.storage {
             StorageConfig::S3(cfg) => &cfg.prefix,
-            StorageConfig::GCS(cfg) => &cfg.prefix,
+            StorageConfig::Gcs(cfg) => &cfg.prefix,
         };
 
         // List all backups for this node
@@ -510,7 +522,7 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
     if storage_type == "gcs" || std::env::var("GCS_BUCKET").is_ok() {
         let bucket = std::env::var("GCS_BUCKET")
             .or_else(|_| {
-                if let StorageConfig::GCS(ref gcs_config) = config.storage {
+                if let StorageConfig::Gcs(ref gcs_config) = config.storage {
                     Ok(gcs_config.bucket.clone())
                 } else {
                     Err(std::env::VarError::NotPresent)
@@ -519,7 +531,7 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
             .context("GCS_BUCKET required for GCS storage")?;
 
         let prefix = std::env::var("GCS_PREFIX").unwrap_or_else(|_| {
-            if let StorageConfig::GCS(ref gcs_config) = config.storage {
+            if let StorageConfig::Gcs(ref gcs_config) = config.storage {
                 gcs_config.prefix.clone()
             } else {
                 "redis-vault".to_string()
@@ -527,14 +539,14 @@ fn apply_env_overrides(mut config: Config) -> Result<Config> {
         });
 
         let project_id = std::env::var("GCS_PROJECT_ID").ok().or_else(|| {
-            if let StorageConfig::GCS(ref gcs_config) = config.storage {
+            if let StorageConfig::Gcs(ref gcs_config) = config.storage {
                 gcs_config.project_id.clone()
             } else {
                 None
             }
         });
 
-        config.storage = StorageConfig::GCS(GcsConfig {
+        config.storage = StorageConfig::Gcs(GcsConfig {
             bucket,
             prefix,
             project_id,
@@ -667,10 +679,10 @@ async fn main() -> Result<()> {
 
     // Initialize metrics
     let metrics = Arc::new(RwLock::new(Metrics::new()?));
-    debug!("Metrics initialized");
 
     // Start metrics server if enabled
     let metrics_handle = if config.metrics.enabled {
+        debug!("Metrics initialized");
         Some(spawn_metrics_server(
             metrics.clone(),
             config.metrics.port,

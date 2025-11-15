@@ -1,13 +1,13 @@
 redis:
   # Redis connection string
   connection_string: "redis://localhost:6379"
-  
+
   # Path to Redis data directory containing dump.rdb
   data_path: "/data"
-  
+
   # Unique name for this Redis node
   node_name: "redis-master-01"
-  
+
   # Backup configuration based on Redis role
   backup_master: true      # Backup if this node is a master
   backup_replica: false    # Backup if this node is a replica
@@ -29,7 +29,7 @@ backup:
 
 # S3 Configuration
 storage:
-  type: S3
+  type: s3
   bucket: "my-redis-vault"
   prefix: "production/redis"
   # Optional: specify region (uses default AWS config if not set)
@@ -39,7 +39,7 @@ storage:
 
 # GCS Configuration (alternative)
 # storage:
-#   type: GCS
+#   type: gcs
 #   bucket: "my-redis-vault"
 #   prefix: "production/redis"
 #   # Optional: specify project ID

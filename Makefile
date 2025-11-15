@@ -13,6 +13,8 @@ bump-version::
 
 fmt::
 	cargo fmt || echo "cargo unavailable. Noop"
+	cargo clippy || echo "cargo unavailable. Noop"
+	cargo deny check -s|| echo "cargo unavailable. Noop"
 
 clean::
 	cargo clean || echo "cargo unavailable. Noop"
