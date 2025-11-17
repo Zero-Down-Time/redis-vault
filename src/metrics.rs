@@ -138,7 +138,7 @@ pub async fn start_metrics_server(
                 Ok(body) => Ok(warp::reply::with_header(
                     body,
                     "content-type",
-                    "text/plain; version=0.0.4; charset=utf-8",
+                    "text/plain; charset=utf-8",
                 )),
                 Err(_) => Err(warp::reject::custom(MetricsError)),
             }

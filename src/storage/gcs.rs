@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use gcloud_storage::client::{Client as GcsClient, ClientConfig};
 
 use super::{BackupMetadata, StorageBackend};
-use crate::BackupError;
+use crate::backup::BackupError;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct GcsConfig {

@@ -7,9 +7,9 @@ license = "AGPL-3.0-or-later"
 keywords = ["redis", "kubernetes", "sidecar"]
 
 [dependencies]
-tokio = { version = "1.35", features = ["full"] }
-aws-config = "1.1"
-aws-sdk-s3 = "1.12"
+tokio = { version = "1.48", features = ["full"] }
+aws-config = "1.8"
+aws-sdk-s3 = "1.112"
 gcloud-storage = "1.1"
 redis = { version = "0.32", features = ["tokio-comp", "connection-manager"] }
 chrono = "0.4"
@@ -17,16 +17,16 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 config = "0.15"
-clap = { version = "4.4", features = ["derive", "env"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 anyhow = "1.0"
 thiserror = "2.0"
 async-trait = "0.1"
-humantime = "2.1"
-bytes = "1.5"
+humantime = "2.3"
+bytes = "1.11"
 futures = "0.3"
-regex = "1.10"
+regex = "1.12"
 prometheus = "0.14"
 warp = { version = "0.4", features = ["server"] }
 

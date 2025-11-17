@@ -5,7 +5,7 @@ use bytes::Bytes;
 use chrono::{DateTime, Utc};
 
 use super::{BackupMetadata, StorageBackend};
-use crate::BackupError;
+use crate::backup::BackupError;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct S3Config {

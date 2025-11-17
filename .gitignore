@@ -27,3 +27,8 @@ test-data/
 # Backup files
 *.bak
 *.backup
+
+# secrets ?
+ *.key
+ *.pem
+ *.p12
