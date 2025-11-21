@@ -6,11 +6,8 @@
 
 pub fn init_logging(level: &str, format: &str) {
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        tracing_subscriber::EnvFilter::new("warn").add_directive(
-            format!("redis_vault={}", level)
-                .parse()
-                .unwrap(),
-        )
+        tracing_subscriber::EnvFilter::new("warn")
+            .add_directive(format!("redis_vault={}", level).parse().unwrap())
     });
 
     match format {

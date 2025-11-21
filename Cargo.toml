@@ -9,7 +9,7 @@ keywords = ["redis", "kubernetes", "sidecar"]
 [dependencies]
 tokio = { version = "1.48", features = ["full"] }
 aws-config = "1.8"
-aws-sdk-s3 = "1.112"
+aws-sdk-s3 = "1.115"
 gcloud-storage = "1.1"
 redis = { version = "0.32", features = ["tokio-comp", "connection-manager"] }
 chrono = "0.4"

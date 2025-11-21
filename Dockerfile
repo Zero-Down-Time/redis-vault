@@ -1,10 +1,10 @@
 # Dockerfile
 # Build arguments for version control
-ARG RUST_VERSION=1.87
+ARG RUST_VERSION=1.91
 ARG ALPINE_VERSION=3.22
 
 # Builder stage - using Alpine-based Rust for smaller layers
-FROM rust:${RUST_VERSION}-alpine as builder
+FROM rust:${RUST_VERSION}-alpine${ALPINE_VERSION} as builder
 
 # Install build dependencies
 RUN apk add --no-cache \
