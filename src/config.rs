@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::fs;
 use std::path::{Path, PathBuf};
-use tokio::fs;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::storage::gcs::GcsConfig;
 use crate::storage::s3::S3Config;
@@ -97,20 +97,21 @@ pub struct MetricsConfig {
 }
 
 /// Load configuration from file with environment variable overrides
-pub async fn load_config(path: &Path) -> Result<Config> {
+pub fn load_config(path: &Path) -> Result<Config> {
     // Start with default configuration
     let mut config = get_default_config();
 
     // Load from file if it exists
     if path.exists() {
         info!("Loading configuration from file: {:?}", path);
-        let content = fs::read_to_string(path).await?;
+        let content = fs::read_to_string(path)
+            .with_context(|| format!("Failed to read configuration file: {:?}", path))?;
         let file_config: Config = serde_json::from_str(&content)
             .or_else(|_| serde_yaml::from_str(&content))
             .context("Failed to parse configuration file")?;
         config = file_config;
     } else {
-        info!("No config file found at {:?}, using defaults", path);
+        warn!("No config file found at {:?}, using defaults", path);
     }
 
     // Override with environment variables
@@ -291,33 +292,4 @@ pub fn apply_env_overrides(mut config: Config) -> Result<Config> {
     }
 
     Ok(config)
-}
-
-/// Initialize logging based on configuration
-pub fn init_logging(config: &Config) {
-    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        tracing_subscriber::EnvFilter::new("warn").add_directive(
-            format!("redis_vault={}", config.logging.level)
-                .parse()
-                .unwrap(),
-        )
-    });
-
-    match config.logging.format.as_str() {
-        "json" => {
-            tracing_subscriber::fmt()
-                .with_env_filter(env_filter)
-                .json()
-                .flatten_event(true)
-                .without_time()
-                .with_target(false)
-                .init();
-        }
-        _ => {
-            tracing_subscriber::fmt()
-                .with_env_filter(env_filter)
-                .with_target(false)
-                .init();
-        }
-    }
 }

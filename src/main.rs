@@ -9,11 +9,13 @@ use tracing::{debug, error, info};
 
 mod backup;
 mod config;
+mod logging;
 mod metrics;
 mod storage;
 
 use backup::BackupManager;
-use config::{init_logging, load_config};
+use config::load_config;
+use logging::init_logging;
 use metrics::Metrics;
 
 // CLI Arguments
@@ -47,10 +49,10 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Load configuration
-    let config = load_config(&args.config).await?;
+    let config = load_config(&args.config)?;
 
-    // Initialize tracing with config
-    init_logging(&config);
+    // Initialize logging using custom config
+    init_logging(&config.logging.level, &config.logging.format);
 
     debug!("Config: {:?}", config);
 
