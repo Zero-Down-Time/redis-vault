@@ -12,11 +12,11 @@ bump-version::
 	addCommitTagPush Cargo.toml v$$new_version
 
 lint::
-	which cargo-clippy 1>/dev/null && cargo-clippy
-	which cargo-deny 1>/dev/null && cargo-deny check -s
+	-cargo-clippy
+	-cargo-deny check -s
 
 fmt::
-	which cargo-fmt 1>/dev/null && cargo-fmt
+	-cargo fmt
 
 clean::
-	which cargo 1>/dev/null && cargo clean
+	-cargo clean
