@@ -1,6 +1,6 @@
 # Dockerfile
 # Build arguments for version control
-ARG RUST_VERSION=1.90
+ARG RUST_VERSION=1.87
 ARG ALPINE_VERSION=3.22
 
 # Builder stage - using Alpine-based Rust for smaller layers
