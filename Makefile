@@ -11,10 +11,12 @@ bump-version::
 	echo "set cargo package version to $$new_version in Cargo.toml"
 	addCommitTagPush Cargo.toml v$$new_version
 
-fmt::
-	cargo fmt || echo "cargo unavailable. Noop"
+lint::
 	cargo clippy || echo "cargo unavailable. Noop"
 	cargo deny check -s|| echo "cargo unavailable. Noop"
+
+fmt::
+	cargo fmt || echo "cargo unavailable. Noop"
 
 clean::
 	cargo clean || echo "cargo unavailable. Noop"
