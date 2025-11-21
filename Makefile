@@ -12,11 +12,11 @@ bump-version::
 	addCommitTagPush Cargo.toml v$$new_version
 
 lint::
-	cargo clippy || echo "cargo unavailable. Noop"
-	cargo deny check -s|| echo "cargo unavailable. Noop"
+	which cargo-clippy 1>/dev/null && cargo-clippy
+	which cargo-deny 1>/dev/null && cargo-deny check -s
 
 fmt::
-	cargo fmt || echo "cargo unavailable. Noop"
+	which cargo-fmt 1>/dev/null && cargo-fmt
 
 clean::
-	cargo clean || echo "cargo unavailable. Noop"
+	which cargo 1>/dev/null && cargo clean

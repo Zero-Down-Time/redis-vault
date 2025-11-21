@@ -10,12 +10,11 @@ targets = [
 all-features = true
 
 [advisories]
-unmaintained = "workspace"
 ignore = [
 ]
 
 [bans]
-multiple-versions = "warn"
+multiple-versions = "allow" #"warn"
 wildcards = 'deny'
 deny = [
 ]
@@ -32,9 +31,9 @@ unknown-git = "deny"
 # We want really high confidence when inferring licenses from text
 confidence-threshold = 0.93
 allow = [
+    "AGPL-3.0-or-later",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
-    "AGPL-3.0-or-later",
     "MIT",
     "BSD-3-Clause",
     "ISC",

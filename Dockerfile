@@ -9,13 +9,14 @@ FROM rust:${RUST_VERSION}-alpine${ALPINE_VERSION} as builder
 # Install build dependencies
 RUN apk add --no-cache \
   openssl-dev \
-  musl-dev \
-  cargo-auditable
+  musl-dev
+
+RUN cargo install --locked cargo-auditable cargo-deny
 
 WORKDIR /app
 
 # Copy manifests
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock deny.toml ./
 
 # Ensure we dynamically link to libc due gcc and openssl
 ENV RUSTFLAGS='-C target-feature=-crt-static'
@@ -23,6 +24,7 @@ ENV RUSTFLAGS='-C target-feature=-crt-static'
 # Build dependencies (this is cached as long as Cargo.toml doesn't change)
 RUN mkdir src && \
     echo "fn main() {}" > src/main.rs && \
+    cargo deny check -s && \
     cargo auditable build --release && \
     rm -rf src
 
