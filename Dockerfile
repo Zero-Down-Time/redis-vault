@@ -1,17 +1,18 @@
-# Dockerfile
-# Build arguments for version control
-ARG RUST_VERSION=1.91
 ARG ALPINE_VERSION=3.22
 
-# Builder stage - using Alpine-based Rust for smaller layers
-FROM rust:${RUST_VERSION}-alpine${ALPINE_VERSION} as builder
+# Builder stage
+FROM alpine:${ALPINE_VERSION} as builder
 
-# Install build dependencies
+# build dependencies
+RUN echo "@edge-main http://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories
+
 RUN apk add --no-cache \
   openssl-dev \
-  musl-dev
-
-RUN cargo install --locked cargo-auditable cargo-deny
+  musl-dev \
+  rust@edge-main \
+  cargo@edge-main \
+  cargo-auditable@edge-main \
+  cargo-deny@edge-main
 
 WORKDIR /app
 
