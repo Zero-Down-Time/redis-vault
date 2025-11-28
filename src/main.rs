@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use clap::Parser;
+use git_version::git_version;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -18,9 +19,18 @@ use config::load_config;
 use logging::init_logging;
 use metrics::Metrics;
 
+const VERSION: &str = git_version!();
+
 // CLI Arguments
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(
+    author,
+    version = VERSION,
+    about = "Redis Vault - Redis backup sidecar",
+    long_about = "Rust application designed to run as a sidecar container \
+alongside Redis instances, providing automated backups to S3 or Google Cloud Storage \
+with configurable retention policies."
+)]
 struct Args {
     /// Path to configuration file
     #[arg(short, long, default_value = "config.yaml")]

@@ -27,6 +27,7 @@ bytes = "1.11"
 regex = "1.12"
 prometheus = "0.14"
 warp = { version = "0.4", features = ["server"] }
+git-version = "0.3.9"
 
 [profile.release]
 strip = true
