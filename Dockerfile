@@ -1,4 +1,4 @@
-ARG ALPINE_VERSION=3.22
+ARG ALPINE_VERSION=3.23
 
 # Builder stage
 FROM alpine:${ALPINE_VERSION} as builder
