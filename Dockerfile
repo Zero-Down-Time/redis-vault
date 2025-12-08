@@ -1,18 +1,16 @@
-ARG ALPINE_VERSION=3.22
+ARG ALPINE_VERSION=3.23
 
 # Builder stage
 FROM alpine:${ALPINE_VERSION} as builder
 
 # build dependencies
-RUN echo "@edge-main http://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories
-
 RUN apk add --no-cache \
   openssl-dev \
   musl-dev \
-  rust@edge-main \
-  cargo@edge-main \
-  cargo-auditable@edge-main \
-  cargo-deny@edge-main
+  rust \
+  cargo \
+  cargo-auditable \
+  cargo-deny
 
 WORKDIR /app
 
@@ -43,6 +41,7 @@ FROM alpine:${ALPINE_VERSION}
 # libssl3 is for TLS connections to cloud providers
 RUN apk add --no-cache \
     ca-certificates \
+    tini \
     libgcc \
     libssl3 && \
     rm -rf /var/cache/apk/*
@@ -58,4 +57,4 @@ RUN addgroup -g 1000 vault && \
 
 USER vault
 
-ENTRYPOINT ["redis-vault"]
+ENTRYPOINT ["tini", "--", "redis-vault"]

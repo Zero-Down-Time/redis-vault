@@ -11,6 +11,7 @@ all-features = true
 
 [advisories]
 ignore = [
+  "RUSTSEC-2025-0134" # AWS dependency on unmaintained rustls-pemfile
 ]
 
 [bans]
@@ -31,11 +32,12 @@ unknown-git = "deny"
 # We want really high confidence when inferring licenses from text
 confidence-threshold = 0.93
 allow = [
-    "AGPL-3.0", #-or-later",
+    "AGPL-3.0-or-later",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "MIT",
     "BSD-3-Clause",
+    "BSD-2-Clause",
     "ISC",
     "Unicode-3.0",
     "Zlib",
