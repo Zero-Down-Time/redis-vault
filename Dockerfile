@@ -24,14 +24,14 @@ ENV RUSTFLAGS='-C target-feature=-crt-static'
 RUN mkdir src && \
     echo "fn main() {}" > src/main.rs && \
     cargo deny check -s && \
-    cargo auditable build --release && \
+    cargo auditable build --release --frozen && \
     rm -rf src
 
 # Copy source code
 COPY src ./src
 
 # Build application with static linking for Alpine
-RUN touch src/main.rs && cargo auditable build --release
+RUN touch src/main.rs && cargo auditable build --release --frozen
 
 # Runtime stage
 FROM alpine:${ALPINE_VERSION}
