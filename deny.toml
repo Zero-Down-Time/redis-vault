@@ -11,7 +11,6 @@ all-features = true
 
 [advisories]
 ignore = [
-  "RUSTSEC-2025-0134" # AWS dependency on unmaintained rustls-pemfile
 ]
 
 [bans]
@@ -40,6 +39,7 @@ allow = [
     "BSD-2-Clause",
     "BSL-1.0",
     "ISC",
+    "OpenSSL",
     "Unicode-3.0",
     "Zlib",
 ]

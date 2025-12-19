@@ -59,7 +59,7 @@ pub async fn get_storage_client(storage_type: &StorageType) -> Result<Arc<dyn St
     Ok(client)
 }
 
-pub fn parse_storage_url(url: &String) -> Result<StorageConfig, ParseError> {
+pub fn parse_storage_url(url: &str) -> Result<StorageConfig, ParseError> {
     // Split on "://"
     let parts: Vec<&str> = url.split("://").collect();
     if parts.len() != 2 {
