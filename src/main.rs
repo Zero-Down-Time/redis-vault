@@ -19,7 +19,7 @@ use config::load_config;
 use logging::init_logging;
 use metrics::Metrics;
 
-const VERSION: &str = git_version!(cargo_prefix="v");
+const VERSION: &str = git_version!(cargo_prefix = "v");
 
 // CLI Arguments
 #[derive(Parser, Debug)]

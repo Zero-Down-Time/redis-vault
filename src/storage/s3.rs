@@ -7,49 +7,28 @@ use chrono::{DateTime, Utc};
 use super::{BackupMetadata, StorageBackend};
 use crate::backup::BackupError;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct S3Config {
-    pub bucket: String,
-    pub prefix: String,
-    pub region: Option<String>,
-    pub endpoint: Option<String>,
-}
-
 pub struct S3Storage {
     client: S3Client,
-    bucket: String,
 }
 
 impl S3Storage {
-    pub async fn new(config: &S3Config) -> Result<Self> {
-        let mut aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest());
-
-        if let Some(region) = &config.region {
-            aws_config = aws_config.region(aws_config::Region::new(region.clone()));
-        }
-
-        let aws_config = aws_config.load().await;
-        let mut s3_config = aws_sdk_s3::config::Builder::from(&aws_config);
-
-        if let Some(endpoint) = &config.endpoint {
-            s3_config = s3_config.endpoint_url(endpoint);
-        }
-
+    pub async fn new() -> Result<Self> {
+        let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .load()
+            .await;
+        let s3_config = aws_sdk_s3::config::Builder::from(&aws_config);
         let client = S3Client::from_conf(s3_config.build());
 
-        Ok(S3Storage {
-            client,
-            bucket: config.bucket.clone(),
-        })
+        Ok(S3Storage { client })
     }
 }
 
 #[async_trait]
 impl StorageBackend for S3Storage {
-    async fn upload(&self, key: &str, data: Bytes) -> Result<()> {
+    async fn upload(&self, bucket: &str, key: &str, data: Bytes) -> Result<()> {
         self.client
             .put_object()
-            .bucket(&self.bucket)
+            .bucket(bucket)
             .key(key)
             .body(data.into())
             .send()
@@ -59,16 +38,12 @@ impl StorageBackend for S3Storage {
         Ok(())
     }
 
-    async fn list(&self, prefix: &str) -> Result<Vec<BackupMetadata>> {
+    async fn list(&self, bucket: &str, prefix: &str) -> Result<Vec<BackupMetadata>> {
         let mut backups = Vec::new();
         let mut continuation_token = None;
 
         loop {
-            let mut request = self
-                .client
-                .list_objects_v2()
-                .bucket(&self.bucket)
-                .prefix(prefix);
+            let mut request = self.client.list_objects_v2().bucket(bucket).prefix(prefix);
 
             if let Some(token) = continuation_token {
                 request = request.continuation_token(token);
@@ -102,10 +77,10 @@ impl StorageBackend for S3Storage {
         Ok(backups)
     }
 
-    async fn delete(&self, key: &str) -> Result<()> {
+    async fn delete(&self, bucket: &str, key: &str) -> Result<()> {
         self.client
             .delete_object()
-            .bucket(&self.bucket)
+            .bucket(bucket)
             .key(key)
             .send()
             .await

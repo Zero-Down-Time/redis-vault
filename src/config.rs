@@ -5,9 +5,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
-use crate::storage::gcs::GcsConfig;
-use crate::storage::s3::S3Config;
-
 const DEFAULT_BACKUP_MASTER: bool = true;
 const DEFAULT_BACKUP_REPLICA: bool = true;
 const DEFAULT_RETENTION_COUNT: usize = 7;
@@ -20,7 +17,6 @@ const DEFAULT_INITIAL_DELAY: &str = "300s";
 pub struct Config {
     pub redis: RedisConfig,
     pub backup: BackupConfig,
-    pub storage: StorageConfig,
     pub retention: RetentionConfig,
     pub logging: LoggingConfig,
     pub metrics: MetricsConfig,
@@ -55,19 +51,13 @@ impl fmt::Debug for RedisConfig {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct BackupConfig {
+    pub storage_url: String,
     /// Interval between backup checks (e.g., "1h", "30m")
     pub interval: String,
     /// Filename pattern for dump file
     pub dump_filename: String,
     /// Initial delay to give Redis replication a chance to set up
     pub initial_delay: String,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(tag = "type")]
-pub enum StorageConfig {
-    S3(S3Config),
-    Gcs(GcsConfig),
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -131,16 +121,11 @@ pub fn get_default_config() -> Config {
             backup_replica: DEFAULT_BACKUP_REPLICA,
         },
         backup: BackupConfig {
+            storage_url: "s3://redis-vault-bucket/".to_string(),
             interval: DEFAULT_INTERVAL.to_string(),
             dump_filename: "dump.rdb".to_string(),
             initial_delay: DEFAULT_INITIAL_DELAY.to_string(),
         },
-        storage: StorageConfig::S3(S3Config {
-            bucket: "redis-vault".to_string(),
-            prefix: "redis-vault".to_string(),
-            region: None,
-            endpoint: None,
-        }),
         retention: RetentionConfig {
             keep_last: DEFAULT_RETENTION_COUNT,
             keep_duration: None,
@@ -177,6 +162,9 @@ pub fn apply_env_overrides(mut config: Config) -> Result<Config> {
     }
 
     // Backup configuration overrides
+    if let Ok(storage_url) = std::env::var("STORAGE_URL") {
+        config.backup.storage_url = storage_url;
+    }
     if let Ok(interval) = std::env::var("BACKUP_INTERVAL") {
         config.backup.interval = interval;
     }
@@ -185,83 +173,6 @@ pub fn apply_env_overrides(mut config: Config) -> Result<Config> {
     }
     if let Ok(initial_delay) = std::env::var("INITIAL_DELAY") {
         config.backup.initial_delay = initial_delay;
-    }
-
-    // Storage configuration overrides
-    let storage_type = std::env::var("STORAGE_TYPE").unwrap_or_default();
-    if storage_type == "gcs" || std::env::var("GCS_BUCKET").is_ok() {
-        let bucket = std::env::var("GCS_BUCKET")
-            .or_else(|_| {
-                if let StorageConfig::Gcs(ref gcs_config) = config.storage {
-                    Ok(gcs_config.bucket.clone())
-                } else {
-                    Err(std::env::VarError::NotPresent)
-                }
-            })
-            .context("GCS_BUCKET required for GCS storage")?;
-
-        let prefix = std::env::var("GCS_PREFIX").unwrap_or_else(|_| {
-            if let StorageConfig::Gcs(ref gcs_config) = config.storage {
-                gcs_config.prefix.clone()
-            } else {
-                "redis-vault".to_string()
-            }
-        });
-
-        let project_id = std::env::var("GCS_PROJECT_ID").ok().or_else(|| {
-            if let StorageConfig::Gcs(ref gcs_config) = config.storage {
-                gcs_config.project_id.clone()
-            } else {
-                None
-            }
-        });
-
-        config.storage = StorageConfig::Gcs(GcsConfig {
-            bucket,
-            prefix,
-            project_id,
-        });
-    } else if std::env::var("S3_BUCKET").is_ok() || matches!(config.storage, StorageConfig::S3(_)) {
-        let bucket = std::env::var("S3_BUCKET")
-            .or_else(|_| {
-                if let StorageConfig::S3(ref s3_config) = config.storage {
-                    Ok(s3_config.bucket.clone())
-                } else {
-                    Err(std::env::VarError::NotPresent)
-                }
-            })
-            .context("S3_BUCKET required for S3 storage")?;
-
-        let prefix = std::env::var("S3_PREFIX").unwrap_or_else(|_| {
-            if let StorageConfig::S3(ref s3_config) = config.storage {
-                s3_config.prefix.clone()
-            } else {
-                "redis-vault".to_string()
-            }
-        });
-
-        let region = std::env::var("AWS_REGION").ok().or_else(|| {
-            if let StorageConfig::S3(ref s3_config) = config.storage {
-                s3_config.region.clone()
-            } else {
-                None
-            }
-        });
-
-        let endpoint = std::env::var("S3_ENDPOINT").ok().or_else(|| {
-            if let StorageConfig::S3(ref s3_config) = config.storage {
-                s3_config.endpoint.clone()
-            } else {
-                None
-            }
-        });
-
-        config.storage = StorageConfig::S3(S3Config {
-            bucket,
-            prefix,
-            region,
-            endpoint,
-        });
     }
 
     // Retention configuration overrides

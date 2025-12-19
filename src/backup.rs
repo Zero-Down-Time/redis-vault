@@ -17,9 +17,9 @@ use tokio::sync::RwLock;
 use tokio::time;
 use tracing::{debug, error, info, warn};
 
-use crate::config::{Config, StorageConfig};
+use crate::config::Config;
 use crate::metrics::Metrics;
-use crate::storage::{StorageBackend, gcs::GcsStorage, s3::S3Storage};
+use crate::storage::{StorageConfig, get_storage_client, parse_storage_url};
 
 /// Custom error types for backup operations
 #[derive(Debug, thiserror::Error)]
@@ -71,8 +71,7 @@ async fn get_redis_role(conn: &mut ConnectionManager) -> Result<RedisRole> {
 /// - Cleaning up old backups based on retention policy
 pub struct BackupManager {
     config: Config,
-    storage: Arc<dyn StorageBackend>,
-    redis_conn: Option<ConnectionManager>,
+    storage: StorageConfig,
     metrics: Arc<RwLock<Metrics>>,
 }
 
@@ -82,24 +81,11 @@ impl BackupManager {
     /// This initializes the storage backend and optionally creates a Redis connection
     /// for role detection (only needed if backup_master != backup_replica).
     pub async fn new(config: Config, metrics: Arc<RwLock<Metrics>>) -> Result<Self> {
-        // Create storage backend
-        let storage: Arc<dyn StorageBackend> = match &config.storage {
-            StorageConfig::S3(s3_config) => Arc::new(S3Storage::new(s3_config).await?),
-            StorageConfig::Gcs(gcs_config) => Arc::new(GcsStorage::new(gcs_config).await?),
-        };
-
-        // Create Redis connection if needed for role detection
-        let redis_conn = if config.redis.backup_master != config.redis.backup_replica {
-            let client = redis::Client::open(config.redis.connection_string.as_str())?;
-            Some(ConnectionManager::new(client).await?)
-        } else {
-            None
-        };
+        let storage = parse_storage_url(&config.backup.storage_url)?;
 
         Ok(BackupManager {
             config,
             storage,
-            redis_conn,
             metrics,
         })
     }
@@ -112,9 +98,12 @@ impl BackupManager {
         }
 
         // Get Redis role
-        if let Some(conn) = &mut self.redis_conn {
-            let role = get_redis_role(conn).await?;
+        // Create Redis connection if needed for role detection
+        if self.config.redis.backup_master || self.config.redis.backup_replica {
+            let client = redis::Client::open(self.config.redis.connection_string.as_str())?;
+            let conn = &mut ConnectionManager::new(client).await?;
 
+            let role = get_redis_role(conn).await?;
             match role {
                 RedisRole::Master => Ok(self.config.redis.backup_master),
                 RedisRole::Replica => Ok(self.config.redis.backup_replica),
@@ -124,7 +113,7 @@ impl BackupManager {
                 }
             }
         } else {
-            Ok(true)
+            Ok(false)
         }
     }
 
@@ -171,15 +160,9 @@ impl BackupManager {
             let data_size = data.len() as f64;
             let data_bytes = bytes::Bytes::from(data);
 
-            // Generate backup key
-            let prefix = match &self.config.storage {
-                StorageConfig::S3(cfg) => &cfg.prefix,
-                StorageConfig::Gcs(cfg) => &cfg.prefix,
-            };
-
             let key = format!(
                 "{}/{}_{}.rdb",
-                prefix.trim_end_matches('/'),
+                self.storage.prefix.trim_end_matches('/'),
                 self.config.redis.node_name,
                 humantime::format_rfc3339_seconds(modified)
             );
@@ -187,7 +170,9 @@ impl BackupManager {
             // Upload to storage
             debug!("Uploading backup to: {}", key);
 
-            match self.storage.upload(&key, data_bytes).await {
+            let client = get_storage_client(&self.storage.storage_type).await?;
+
+            match client.upload(&self.storage.bucket, &key, data_bytes).await {
                 Ok(()) => {
                     info!("Backup uploaded successfully: {}", key);
 
@@ -218,11 +203,7 @@ impl BackupManager {
         match backup_result {
             Ok(()) => {
                 metrics.backups_successful.inc();
-
-                // Cleanup old backups
                 drop(metrics);
-                self.cleanup_old_backups().await?;
-
                 Ok(())
             }
             Err(e) => {
@@ -242,19 +223,16 @@ impl BackupManager {
         metrics.cleanup_operations_total.inc();
         drop(metrics);
 
-        let prefix = match &self.config.storage {
-            StorageConfig::S3(cfg) => &cfg.prefix,
-            StorageConfig::Gcs(cfg) => &cfg.prefix,
-        };
-
         // List all backups for this node
         let node_prefix = format!(
             "{}/{}",
-            prefix.trim_end_matches('/'),
+            self.storage.prefix.trim_end_matches('/'),
             self.config.redis.node_name
         );
 
-        let mut backups = self.storage.list(&node_prefix).await?;
+        let client = get_storage_client(&self.storage.storage_type).await?;
+
+        let mut backups = client.list(&self.storage.bucket, &node_prefix).await?;
 
         // Sort by timestamp (newest first)
         backups.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
@@ -287,7 +265,7 @@ impl BackupManager {
                 info!("Deleting old backup: {}", backup.key);
 
                 let metrics = self.metrics.write().await;
-                match self.storage.delete(&backup.key).await {
+                match client.delete(&self.storage.bucket, &backup.key).await {
                     Ok(()) => {
                         metrics.storage_deletes_total.inc();
                         deleted_count += 1;
@@ -351,8 +329,18 @@ impl BackupManager {
             }
 
             match self.perform_backup().await {
-                Ok(()) => debug!("Backup cycle completed successfully"),
+                Ok(()) => {
+                    debug!("Backup cycle completed successfully");
+                }
                 Err(e) => error!("Backup failed: {}", e),
+            }
+
+            // Cleanup old backups
+            match self.cleanup_old_backups().await {
+                Ok(()) => {
+                    debug!("Backup retention run successfully");
+                }
+                Err(e) => error!("Backup retention failed: {}", e),
             }
 
             if once {

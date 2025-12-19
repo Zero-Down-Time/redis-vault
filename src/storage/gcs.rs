@@ -7,20 +7,12 @@ use gcloud_storage::client::{Client as GcsClient, ClientConfig};
 use super::{BackupMetadata, StorageBackend};
 use crate::backup::BackupError;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct GcsConfig {
-    pub bucket: String,
-    pub prefix: String,
-    pub project_id: Option<String>,
-}
-
 pub struct GcsStorage {
     client: GcsClient,
-    bucket: String,
 }
 
 impl GcsStorage {
-    pub async fn new(config: &GcsConfig) -> Result<Self> {
+    pub async fn new() -> Result<Self> {
         let client_config = ClientConfig::default()
             .with_auth()
             .await
@@ -28,21 +20,18 @@ impl GcsStorage {
 
         let client = GcsClient::new(client_config);
 
-        Ok(GcsStorage {
-            client,
-            bucket: config.bucket.clone(),
-        })
+        Ok(GcsStorage { client })
     }
 }
 
 #[async_trait]
 impl StorageBackend for GcsStorage {
-    async fn upload(&self, key: &str, data: Bytes) -> Result<()> {
+    async fn upload(&self, bucket: &str, key: &str, data: Bytes) -> Result<()> {
         use gcloud_storage::http::objects::upload::{Media, UploadObjectRequest, UploadType};
 
         let upload_type = UploadType::Simple(Media::new(key.to_string()));
         let req = UploadObjectRequest {
-            bucket: self.bucket.clone(),
+            bucket: bucket.to_string(),
             ..Default::default()
         };
 
@@ -54,11 +43,11 @@ impl StorageBackend for GcsStorage {
         Ok(())
     }
 
-    async fn list(&self, prefix: &str) -> Result<Vec<BackupMetadata>> {
+    async fn list(&self, bucket: &str, prefix: &str) -> Result<Vec<BackupMetadata>> {
         use gcloud_storage::http::objects::list::ListObjectsRequest;
 
         let req = ListObjectsRequest {
-            bucket: self.bucket.clone(),
+            bucket: bucket.to_string(),
             prefix: Some(prefix.to_string()),
             ..Default::default()
         };
@@ -90,11 +79,11 @@ impl StorageBackend for GcsStorage {
         Ok(backups)
     }
 
-    async fn delete(&self, key: &str) -> Result<()> {
+    async fn delete(&self, bucket: &str, key: &str) -> Result<()> {
         use gcloud_storage::http::objects::delete::DeleteObjectRequest;
 
         let req = DeleteObjectRequest {
-            bucket: self.bucket.clone(),
+            bucket: bucket.to_string(),
             object: key.to_string(),
             ..Default::default()
         };
