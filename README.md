@@ -70,6 +70,10 @@ redis:
   backup_replica: false    # Backup if this node is a replica
 
 backup:
+  # Storage backend URL (S3 or GCS)
+  # Format: s3://bucket-name/prefix/ or gs://bucket-name/prefix/
+  storage_url: "s3://my-redis-vault/production/redis/"
+
   # Interval between backup checks
   # Supports formats like: 30s, 5m, 1h, 6h, 1d
   interval: "1h"
@@ -81,26 +85,9 @@ backup:
   # Supports formats like: 30s, 5m, 10m
   initial_delay: "300s"
 
-# Storage backend configuration
-# Choose either s3 or gcs
-
-# S3 Configuration
-storage:
-  type: s3
-  bucket: "my-redis-vault"
-  prefix: "production/redis"
-  # Optional: specify region (uses default AWS config if not set)
-  region: "us-west-2"
-  # Optional: custom S3 endpoint for S3-compatible services (MinIO, etc.)
-  # endpoint: "http://minio:9000"
-
-# GCS Configuration (alternative)
-# storage:
-#   type: gcs
-#   bucket: "my-redis-vault"
-#   prefix: "production/redis"
-#   # Optional: specify project ID
-#   project_id: "my-gcp-project"
+# Examples of storage_url:
+# S3:  storage_url: "s3://my-bucket/path/to/backups/"
+# GCS: storage_url: "gs://my-bucket/path/to/backups/"
 
 retention:
   # Number of recent backups to keep
@@ -155,42 +142,76 @@ redis-vault/redis-master-01_2024-12-01T14:30:22Z.rdb
 
 Environment variables **override** any values set in the configuration file. This allows for easy deployment-specific overrides.
 
+#### **Redis Configuration**
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `REDIS_CONNECTION` | Redis connection string | `redis://localhost:6379` |
 | `REDIS_DATA_PATH` | Path to Redis data directory | `/data` |
 | `REDIS_NODE_NAME` | Unique name for this Redis node | `redis-node` |
-| `BACKUP_MASTER` | Backup if node is master | `true` |
-| `BACKUP_REPLICA` | Backup if node is replica | `true` |
-| `BACKUP_INTERVAL` | Time between backup checks | `1h` |
-| `INITIAL_DELAY` | Initial time to allow replication to setup | `60s` |
-| `DUMP_FILENAME` | Redis dump filename | `dump.rdb` |
-| `STORAGE_TYPE` | Storage backend (`s3` or `gcs`) | `s3` |
-| `S3_BUCKET` | S3 bucket name | `redis-vault` |
-| `S3_PREFIX` | S3 key prefix | `redis-vault` |
-| `AWS_REGION` | AWS region | None |
-| `S3_ENDPOINT` | Custom S3 endpoint (for MinIO, etc.) | None |
-| `GCS_BUCKET` | GCS bucket name | Required for GCS |
-| `GCS_PREFIX` | GCS object prefix | `redis-vault` |
-| `GCS_PROJECT_ID` | GCP project ID | None |
-| `RETENTION_KEEP_LAST` | Number of recent backups to keep | `7` |
-| `RETENTION_KEEP_DURATION` | Keep backups newer than | None |
-| `LOG_FORMAT` | Log format (`text` or `json`) | `text` |
-| `LOG_LEVEL` | Application log level (`trace`, `debug`, `info`, `warn`, `error`) | `info` |
-| `RUST_LOG` | Override all log levels (takes precedence over LOG_LEVEL) | None |
-| `METRICS_ENABLED` | Enable Prometheus metrics endpoint | `false` |
-| `METRICS_PORT` | Port for metrics server | `9090` |
-| `METRICS_LISTEN_ADDRESS` | Listen address for metrics server | `0.0.0.0` |
+| `BACKUP_MASTER` | Backup if node is master (`true` or `false`) | `true` |
+| `BACKUP_REPLICA` | Backup if node is replica (`true` or `false`) | `true` |
+
+#### **Backup Configuration**
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `STORAGE_URL` | Storage backend URL (S3 or GCS) | `s3://redis-vault-bucket/` | `s3://my-bucket/redis/` or `gs://my-bucket/backups/` |
+| `BACKUP_INTERVAL` | Time between backup checks | `1h` | `30m`, `6h`, `1d` |
+| `DUMP_FILENAME` | Redis dump filename | `dump.rdb` | `dump.rdb` |
+| `INITIAL_DELAY` | Initial delay before first backup | `300s` | `60s`, `5m`, `10m` |
+
+**Note:** `STORAGE_URL` uses URL format:
+- **S3:** `s3://bucket-name/optional-prefix/`
+- **GCS:** `gs://bucket-name/optional-prefix/`
+
+The storage backend (S3 or GCS) is automatically determined from the URL scheme.
+
+#### **Retention Configuration**
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `RETENTION_KEEP_LAST` | Number of recent backups to keep | `7` | `30`, `90` |
+| `RETENTION_KEEP_DURATION` | Keep backups newer than this duration | None | `7d`, `30d`, `90d` |
+
+#### **Logging Configuration**
+
+| Variable | Description | Default | Options |
+|----------|-------------|---------|---------|
+| `LOG_FORMAT` | Log format | `text` | `text`, `json` |
+| `LOG_LEVEL` | Application log level | `info` | `trace`, `debug`, `info`, `warn`, `error` |
+| `RUST_LOG` | Override all log levels (takes precedence over `LOG_LEVEL`) | None | `debug`, `redis_vault=trace` |
+
+#### **Metrics Configuration**
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `METRICS_ENABLED` | Enable Prometheus metrics endpoint | `false` | `true`, `false` |
+| `METRICS_PORT` | Port for metrics server | `9090` | `8080`, `9090` |
+| `METRICS_LISTEN_ADDRESS` | Listen address for metrics server | `0.0.0.0` | `0.0.0.0`, `127.0.0.1` |
 
 ### Configuration Override Example
 
 ```bash
-# Base configuration in config.yaml sets bucket to "dev-backups"
+# Base configuration in config.yaml sets storage to dev environment
 # Override for production deployment:
-export S3_BUCKET="prod-backups"
+export STORAGE_URL="s3://prod-redis-backups/redis-vault/"
 export RETENTION_KEEP_LAST="30"
+export RETENTION_KEEP_DURATION="90d"
+export METRICS_ENABLED="true"
 
 # These environment variables will override the file configuration
+redis-vault --config config.yaml
+```
+
+**Example with GCS:**
+```bash
+# Use Google Cloud Storage instead
+export STORAGE_URL="gs://prod-redis-backups/redis-vault/"
+export REDIS_NODE_NAME="redis-master-01"
+export LOG_FORMAT="json"
+export METRICS_PORT="8080"
+
 redis-vault --config config.yaml
 ```
 
