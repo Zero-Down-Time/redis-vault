@@ -1,8 +1,12 @@
 use anyhow::Result;
+use hyper::service::{make_service_fn, service_fn};
+use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use prometheus::{Encoder, Gauge, Histogram, HistogramOpts, IntCounter, Registry, TextEncoder};
+use std::convert::Infallible;
+use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::net::TcpListener;
 use tokio::sync::RwLock;
-use warp::Filter;
 
 #[derive(Clone)]
 pub struct Metrics {
@@ -121,6 +125,7 @@ impl Metrics {
     }
 }
 
+/// Start the metrics HTTP server using Hyper
 pub async fn start_metrics_server(
     metrics: Arc<RwLock<Metrics>>,
     port: u16,
@@ -130,34 +135,71 @@ pub async fn start_metrics_server(
         .parse::<std::net::IpAddr>()
         .map_err(|e| anyhow::anyhow!("Invalid listen address: {}", e))?;
 
-    let metrics_route = warp::path!("metrics").and(warp::get()).and_then(move || {
+    let sock_addr = SocketAddr::new(addr, port);
+
+    // Create TCP listener first - this will fail immediately if port is in use
+    let listener = TcpListener::bind(&sock_addr)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to bind metrics server to {}: {}", sock_addr, e))?;
+
+    // Create the service handler
+    let make_svc = make_service_fn(move |_conn| {
         let metrics = metrics.clone();
         async move {
-            let metrics = metrics.read().await;
-            match metrics.gather() {
-                Ok(body) => Ok(warp::reply::with_header(
-                    body,
-                    "content-type",
-                    "text/plain; charset=utf-8",
-                )),
-                Err(_) => Err(warp::reject::custom(MetricsError)),
-            }
+            Ok::<_, Infallible>(service_fn(move |req| {
+                let metrics = metrics.clone();
+                async move { handle_request(req, metrics).await }
+            }))
         }
     });
 
-    let health_route = warp::path!("health")
-        .and(warp::get())
-        .map(|| warp::reply::with_status(String::from("OK"), warp::http::StatusCode::OK));
+    let local_addr = listener.local_addr()?;
+    tracing::info!("Starting metrics server on {}", local_addr);
 
-    let routes = metrics_route.or(health_route);
+    // Build and run the server with the pre-bound listener
+    let server = Server::from_tcp(listener.into_std()?)?.serve(make_svc);
 
-    tracing::info!("Starting metrics server on {}:{}", addr, port);
-    warp::serve(routes).run((addr, port)).await;
+    // Run the server until it's shut down
+    server.await?;
 
     Ok(())
 }
 
-#[derive(Debug)]
-struct MetricsError;
+/// Handle incoming HTTP requests for metrics and health endpoints
+async fn handle_request(
+    req: Request<Body>,
+    metrics: Arc<RwLock<Metrics>>,
+) -> Result<Response<Body>, Infallible> {
+    match (req.method(), req.uri().path()) {
+        // GET /metrics - Prometheus metrics endpoint
+        (&Method::GET, "/metrics") => {
+            let metrics = metrics.read().await;
+            match metrics.gather() {
+                Ok(body) => Ok(Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "text/plain; charset=utf-8")
+                    .body(Body::from(body))
+                    .unwrap()),
+                Err(e) => {
+                    tracing::error!("Failed to gather metrics: {}", e);
+                    Ok(Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Body::from("Failed to gather metrics"))
+                        .unwrap())
+                }
+            }
+        }
 
-impl warp::reject::Reject for MetricsError {}
+        // GET /health - Health check endpoint
+        (&Method::GET, "/health") => Ok(Response::builder()
+            .status(StatusCode::OK)
+            .body(Body::from("OK"))
+            .unwrap()),
+
+        // 404 Not Found for all other routes
+        _ => Ok(Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from("Not Found"))
+            .unwrap()),
+    }
+}
