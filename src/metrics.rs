@@ -1,8 +1,11 @@
 use anyhow::Result;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Method, Request, Response, Server, StatusCode};
+use http_body_util::Full;
+use hyper::body::Bytes;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::{Method, Request, Response, StatusCode};
+use hyper_util::rt::TokioIo;
 use prometheus::{Encoder, Gauge, Histogram, HistogramOpts, IntCounter, Registry, TextEncoder};
-use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -125,7 +128,7 @@ impl Metrics {
     }
 }
 
-/// Start the metrics HTTP server using Hyper
+/// Start the metrics HTTP server using Hyper 1.x
 pub async fn start_metrics_server(
     metrics: Arc<RwLock<Metrics>>,
     port: u16,
@@ -142,34 +145,36 @@ pub async fn start_metrics_server(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to bind metrics server to {}: {}", sock_addr, e))?;
 
-    // Create the service handler
-    let make_svc = make_service_fn(move |_conn| {
+    let local_addr = listener.local_addr()?;
+    tracing::info!("Metrics server bound to {}", local_addr);
+
+    // Accept connections in a loop
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let io = TokioIo::new(stream);
         let metrics = metrics.clone();
-        async move {
-            Ok::<_, Infallible>(service_fn(move |req| {
+
+        // Spawn a task to handle each connection
+        tokio::spawn(async move {
+            // Create a service function that handles requests for this connection
+            let service = service_fn(move |req| {
                 let metrics = metrics.clone();
                 async move { handle_request(req, metrics).await }
-            }))
-        }
-    });
+            });
 
-    let local_addr = listener.local_addr()?;
-    tracing::info!("Starting metrics server on {}", local_addr);
-
-    // Build and run the server with the pre-bound listener
-    let server = Server::from_tcp(listener.into_std()?)?.serve(make_svc);
-
-    // Run the server until it's shut down
-    server.await?;
-
-    Ok(())
+            // Serve HTTP/1.1 requests on this connection
+            if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
+                tracing::error!("Error serving connection: {:?}", err);
+            }
+        });
+    }
 }
 
 /// Handle incoming HTTP requests for metrics and health endpoints
 async fn handle_request(
-    req: Request<Body>,
+    req: Request<hyper::body::Incoming>,
     metrics: Arc<RwLock<Metrics>>,
-) -> Result<Response<Body>, Infallible> {
+) -> Result<Response<Full<Bytes>>, hyper::Error> {
     match (req.method(), req.uri().path()) {
         // GET /metrics - Prometheus metrics endpoint
         (&Method::GET, "/metrics") => {
@@ -178,13 +183,13 @@ async fn handle_request(
                 Ok(body) => Ok(Response::builder()
                     .status(StatusCode::OK)
                     .header("content-type", "text/plain; charset=utf-8")
-                    .body(Body::from(body))
+                    .body(Full::new(Bytes::from(body)))
                     .unwrap()),
                 Err(e) => {
                     tracing::error!("Failed to gather metrics: {}", e);
                     Ok(Response::builder()
                         .status(StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(Body::from("Failed to gather metrics"))
+                        .body(Full::new(Bytes::from("Failed to gather metrics")))
                         .unwrap())
                 }
             }
@@ -193,13 +198,13 @@ async fn handle_request(
         // GET /health - Health check endpoint
         (&Method::GET, "/health") => Ok(Response::builder()
             .status(StatusCode::OK)
-            .body(Body::from("OK"))
+            .body(Full::new(Bytes::from("OK")))
             .unwrap()),
 
         // 404 Not Found for all other routes
         _ => Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
-            .body(Body::from("Not Found"))
+            .body(Full::new(Bytes::from("Not Found")))
             .unwrap()),
     }
 }
