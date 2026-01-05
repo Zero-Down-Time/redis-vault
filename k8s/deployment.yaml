@@ -14,16 +14,20 @@ data:
       backup_master: true
       backup_replica: false
     backup:
+      storage_url: "s3://my-redis-vault/k8s/production"
       interval: "1h"
       dump_filename: "dump.rdb"
-    storage:
-      type: S3
-      bucket: "my-redis-vault"
-      prefix: "k8s/production"
-      region: "us-west-2"
+      initial_delay: "300s"
     retention:
       keep_last: 10
       keep_duration: "30d"
+    logging:
+      format: "json"
+      level: "info"
+    metrics:
+      enabled: true
+      port: 9090
+      listen_address: "0.0.0.0"
 
 ---
 # Secret for cloud credentials
@@ -34,11 +38,13 @@ metadata:
   namespace: redis
 type: Opaque
 stringData:
-  # For AWS S3
+  # For AWS S3 (used when storage_url starts with s3://)
   AWS_ACCESS_KEY_ID: "your-access-key"
   AWS_SECRET_ACCESS_KEY: "your-secret-key"
+  # Optionally set AWS region if not using default
+  # AWS_REGION: "us-west-2"
 
-  # For GCP (base64 encoded service account JSON)
+  # For GCP (used when storage_url starts with gs://)
   # GOOGLE_APPLICATION_CREDENTIALS_JSON: "base64-encoded-json"
 
 ---
@@ -104,15 +110,46 @@ spec:
         args:
           - --config
           - /config/config.yaml
+        ports:
+        - containerPort: 9090
+          name: metrics
         env:
         - name: RUST_LOG
           value: "info"
         # Environment variables override config file values
         # Uncomment to override specific settings:
+        # - name: REDIS_CONNECTION
+        #   value: "redis://localhost:6379"
+        # - name: REDIS_DATA_PATH
+        #   value: "/data"
+        # - name: REDIS_NODE_NAME
+        #   value: "redis-master-0"
+        # - name: BACKUP_MASTER
+        #   value: "true"
+        # - name: BACKUP_REPLICA
+        #   value: "false"
+        # - name: STORAGE_URL
+        #   value: "s3://my-redis-vault/k8s/production"
         # - name: BACKUP_INTERVAL
-        #   value: "30m"
-        # - name: S3_BUCKET
-        #   value: "override-bucket"
+        #   value: "1h"
+        # - name: DUMP_FILENAME
+        #   value: "dump.rdb"
+        # - name: INITIAL_DELAY
+        #   value: "300s"
+        # - name: RETENTION_KEEP_LAST
+        #   value: "10"
+        # - name: RETENTION_KEEP_DURATION
+        #   value: "30d"
+        # - name: LOG_FORMAT
+        #   value: "json"
+        # - name: LOG_LEVEL
+        #   value: "info"
+        # - name: METRICS_ENABLED
+        #   value: "true"
+        # - name: METRICS_PORT
+        #   value: "9090"
+        # - name: METRICS_LISTEN_ADDRESS
+        #   value: "0.0.0.0"
         envFrom:
         - secretRef:
             name: backup-credentials

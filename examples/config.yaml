@@ -13,6 +13,11 @@ redis:
   backup_replica: false    # Backup if this node is a replica
 
 backup:
+  # Storage URL for backups
+  # S3: s3://bucket-name/prefix/
+  # GCS: gs://bucket-name/prefix/
+  storage_url: "s3://my-redis-vault/production/redis/"
+
   # Interval between backup checks
   # Supports formats like: 30s, 5m, 1h, 6h, 1d
   interval: "1h"
@@ -23,27 +28,6 @@ backup:
   # Initial delay before starting backups (allows Redis replication to stabilize)
   # Supports formats like: 30s, 5m, 10m
   initial_delay: "300s"
-
-# Storage backend configuration
-# Choose either S3 or GCS
-
-# S3 Configuration
-storage:
-  type: s3
-  bucket: "my-redis-vault"
-  prefix: "production/redis"
-  # Optional: specify region (uses default AWS config if not set)
-  region: "us-west-2"
-  # Optional: custom S3 endpoint for S3-compatible services (MinIO, etc.)
-  # endpoint: "http://minio:9000"
-
-# GCS Configuration (alternative)
-# storage:
-#   type: gcs
-#   bucket: "my-redis-vault"
-#   prefix: "production/redis"
-#   # Optional: specify project ID
-#   project_id: "my-gcp-project"
 
 retention:
   # Number of recent backups to keep
