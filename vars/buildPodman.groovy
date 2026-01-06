@@ -1,6 +1,9 @@
 // Common container builder by ZeroDownTime
 
 def call(Map config=[:]) {
+    def buildOnlyChangeSets = config.buildOnlyChangeSets ?: ['*']
+    def debug = config.debug ?: false
+
     pipeline {
       options {
         disableConcurrentBuilds()
@@ -13,12 +16,11 @@ def call(Map config=[:]) {
       stages {
         stage('Prepare') {
           steps {
-            // create list of changed files
+            // create and stash changeSet
             script {
-              def files = gitea.getChangeset(
-                debug: config.debug ?: false
-              )
-              echo "Changed: ${files.join(', ')}"
+              def files = gitea.getChangeset(debug: debug)
+              writeJSON file: 'changeSet.json', json: files
+              stash includes: 'changeSet.json', name: 'changeSet'
             }
 
             // Optional project specific preparations
@@ -36,7 +38,17 @@ def call(Map config=[:]) {
         // Build using rootless podman
         stage('Build') {
           steps {
-            sh 'make build GIT_BRANCH=$GIT_BRANCH'
+            script {
+              unstash 'changeSet'
+              def files = readJSON file: "changeSet.json"
+
+              if (gitea.pathsChanged(files: files, pattern: buildOnlyChangeSets)) {
+                sh 'make build GIT_BRANCH=$GIT_BRANCH'
+              } else {
+                currentBuild.result = 'ABORTED'
+                error("No changes requiring to build")
+              }
+            }
           }
         }
 
