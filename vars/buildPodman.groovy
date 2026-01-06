@@ -46,7 +46,7 @@ def call(Map config=[:]) {
                 sh 'make build GIT_BRANCH=$GIT_BRANCH'
               } else {
                 currentBuild.result = 'ABORTED'
-                error("No changed files matching ${patterns.join(', ')}. No build required.")
+                error("No changed files matching any of: ${buildOnlyChangeSets.join(', ')}. No build required.")
               }
             }
           }
