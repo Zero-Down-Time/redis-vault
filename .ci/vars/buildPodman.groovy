@@ -8,9 +8,6 @@ def call(Map config=[:]) {
       options {
         disableConcurrentBuilds()
       }
-      environment {
-        EXIT_EARLY = 'false'
-      }
       agent {
         node {
           label 'podman-aws-grype'
@@ -49,7 +46,7 @@ def call(Map config=[:]) {
                 sh 'make build GIT_BRANCH=$GIT_BRANCH'
               } else {
                 echo("No changed files matching any of: ${buildOnly.join(', ')}. No build required.")
-                env.EXIT_EARLY = 'true'
+                currentBuild.description = 'SKIP'
               }
             }
           }
@@ -57,7 +54,7 @@ def call(Map config=[:]) {
 
         stage('Test') {
           when {
-            expression { env.EXIT_EARLY == 'false' }
+            expression { currentBuild.description != 'SKIP' }
           }
           steps {
             sh 'make test'
@@ -67,7 +64,7 @@ def call(Map config=[:]) {
         // Scan using grype
         stage('Scan') {
           when {
-            expression { env.EXIT_EARLY == 'false' }
+            expression { currentBuild.description != 'SKIP' }
           }
           steps {
             // we always scan and create the full json report
@@ -89,7 +86,7 @@ def call(Map config=[:]) {
         // incl. basic registry retention removing any untagged images
         stage('Push') {
           when {
-            expression { env.EXIT_EARLY == 'false' }
+            expression { currentBuild.description != 'SKIP' }
             not { changeRequest() }
           }
           steps {
