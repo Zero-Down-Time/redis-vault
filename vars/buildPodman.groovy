@@ -1,12 +1,15 @@
 // Common container builder by ZeroDownTime
 
 def call(Map config=[:]) {
-    def buildOnlyChangeSets = config.buildOnlyChangeSets ?: ['/.*/']
+    def buildOnly = config.buildOnly ?: ['/.*/']
     def debug = config.debug ?: false
 
     pipeline {
       options {
         disableConcurrentBuilds()
+      }
+      environment {
+        EXIT_EARLY = 'false'
       }
       agent {
         node {
@@ -42,17 +45,20 @@ def call(Map config=[:]) {
               unstash 'changeSet'
               def files = readJSON file: "changeSet.json"
 
-              if (gitea.pathsChanged(files: files, patterns: buildOnlyChangeSets)) {
+              if (gitea.pathsChanged(files: files, patterns: buildOnly)) {
                 sh 'make build GIT_BRANCH=$GIT_BRANCH'
               } else {
-                currentBuild.result = 'ABORTED'
-                error("No changed files matching any of: ${buildOnlyChangeSets.join(', ')}. No build required.")
+                echo("No changed files matching any of: ${buildOnly.join(', ')}. No build required.")
+                env.EXIT_EARLY = 'true'
               }
             }
           }
         }
 
         stage('Test') {
+          when {
+            expression { env.EXIT_EARLY == 'false' }
+          }
           steps {
             sh 'make test'
           }
@@ -60,6 +66,9 @@ def call(Map config=[:]) {
 
         // Scan using grype
         stage('Scan') {
+          when {
+            expression { env.EXIT_EARLY == 'false' }
+          }
           steps {
             // we always scan and create the full json report
             sh 'GRYPE_OUTPUT=json GRYPE_FILE="reports/grype-report.json" make scan'
@@ -79,7 +88,10 @@ def call(Map config=[:]) {
         // Push to container registry if not PR
         // incl. basic registry retention removing any untagged images
         stage('Push') {
-          when { not { changeRequest() } }
+          when {
+            expression { env.EXIT_EARLY == 'false' }
+            not { changeRequest() }
+          }
           steps {
             sh 'make push'
             sh 'make rm-remote-untagged'
