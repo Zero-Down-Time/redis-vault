@@ -177,7 +177,7 @@ def getCommitFiles(String giteaUrl, String token, String owner, String repo, Str
  * expects: [files], [patterns]
  */
 def pathsChanged(Map parameters = [:]) {
-    if (debug) {
+    if (parameters.debug) {
         echo("Patterns: " + parameters.patterns.join(', '))
         echo("ChangeSet: " + writeJSON(returnText: true, json: parameters.files))
     }
