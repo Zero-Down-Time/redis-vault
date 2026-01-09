@@ -1,7 +1,7 @@
 // Common container builder by ZeroDownTime
 
 def call(Map config=[:]) {
-    def buildOnly = config.buildOnly ?: ['/.*/']
+    def buildOnly = config.buildOnly ?: ['.*']
     def debug = config.debug ?: false
 
     pipeline {
@@ -42,7 +42,7 @@ def call(Map config=[:]) {
               unstash 'changeSet'
               def files = readJSON file: "changeSet.json"
 
-              if (gitea.pathsChanged(files: files, patterns: buildOnly)) {
+              if (gitea.pathsChanged(files: files, patterns: buildOnly, debug: debug)) {
                 sh 'make build GIT_BRANCH=$GIT_BRANCH'
               } else {
                 echo("No changed files matching any of: ${buildOnly.join(', ')}. No build required.")
