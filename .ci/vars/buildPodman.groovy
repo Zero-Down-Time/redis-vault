@@ -3,6 +3,7 @@
 def call(Map config=[:]) {
     def buildOnly = config.buildOnly ?: ['.*']
     def debug = config.debug ?: false
+    def force_build = config.force_build ?: false
 
     pipeline {
       options {
@@ -42,7 +43,7 @@ def call(Map config=[:]) {
               unstash 'changeSet'
               def files = readJSON file: "changeSet.json"
 
-              if (gitea.pathsChanged(files: files, patterns: buildOnly, debug: debug)) {
+              if (force_build || gitea.pathsChanged(files: files, patterns: buildOnly, debug: debug)) {
                 sh 'make build GIT_BRANCH=$GIT_BRANCH'
               } else {
                 echo("No changed files matching any of: ${buildOnly.join(', ')}. No build required.")
