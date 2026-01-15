@@ -7,29 +7,28 @@ license = "AGPL-3.0-or-later"
 keywords = ["redis", "kubernetes", "sidecar"]
 
 [dependencies]
-tokio = { version = "1.48", features = ["full"] }
-aws-config = "1.8"
+anyhow = "1.0"
+async-trait = "0.1"
 aws-sdk-s3 = "1.115"
-gcloud-storage = "1.1"
-redis = { version = "1.0", features = ["tokio-comp", "connection-manager"] }
+aws-config = "1.8"
+bytes = "1.11"
 chrono = "0.4"
+clap = { version = "4.5", features = ["derive", "env"] }
+gcloud-storage = "1.1"
+git-version = "0.3.9"
+http-body-util = "0.1"
+humantime = "2.3"
+hyper = { version = "1.8", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "server-auto"] }
+prometheus = "0.14"
+redis = { version = "1.0", features = ["tokio-comp", "connection-manager"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
-clap = { version = "4.5", features = ["derive", "env"] }
+thiserror = "2.0"
+tokio = { version = "1.48", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-anyhow = "1.0"
-thiserror = "2.0"
-async-trait = "0.1"
-humantime = "2.3"
-bytes = "1.11"
-regex = "1.12"
-prometheus = "0.14"
-hyper = { version = "1.8", features = ["server", "http1"] }
-hyper-util = { version = "0.1", features = ["tokio", "server", "server-auto"] }
-http-body-util = "0.1"
-git-version = "0.3.9"
 
 [profile.release]
 strip = true

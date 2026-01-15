@@ -2139,7 +2139,6 @@ dependencies = [
  "hyper-util",
  "prometheus",
  "redis",
- "regex",
  "serde",
  "serde_json",
  "serde_yaml",

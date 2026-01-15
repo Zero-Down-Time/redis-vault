@@ -5,12 +5,10 @@ FROM alpine:${ALPINE_VERSION} as builder
 
 # build dependencies
 RUN apk add --no-cache \
-  openssl-dev \
-  musl-dev \
-  rust \
   cargo \
   cargo-auditable \
-  cargo-deny
+  cargo-deny \
+  openssl-dev
 
 WORKDIR /app
 
@@ -21,7 +19,7 @@ COPY Cargo.toml Cargo.lock deny.toml ./
 RUN mkdir src && \
     echo "fn main() {}" > src/main.rs && \
     cargo deny check -s && \
-    cargo auditable build --release --locked  --target x86_64-unknown-linux-musl && \
+    cargo auditable build --release --locked && \
     rm -rf src
 
 
