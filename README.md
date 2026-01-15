@@ -229,3 +229,5 @@ redis-vault --config config.yaml
 ## License
 
 AGPLv3 - See LICENSE file for details
+
+Development of this software was assisted by Claude, an AI assistant created by Anthropic. Any AI-generated code were reviewed, modified, and integrated by human developers as part of the development process.
