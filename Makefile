@@ -12,8 +12,8 @@ bump-version::
 	addCommitTagPush Cargo.toml v$$new_version
 
 lint::
-	-cargo-clippy
-	-cargo-deny check -s
+	-cargo clippy
+	-cargo deny check -s
 
 fmt::
 	-cargo fmt

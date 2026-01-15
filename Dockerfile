@@ -17,21 +17,19 @@ WORKDIR /app
 # Copy manifests
 COPY Cargo.toml Cargo.lock deny.toml ./
 
-# Ensure we dynamically link to libc due gcc and openssl
-ENV RUSTFLAGS='-C target-feature=-crt-static'
-
 # Build dependencies (this is cached as long as Cargo.toml doesn't change)
 RUN mkdir src && \
     echo "fn main() {}" > src/main.rs && \
     cargo deny check -s && \
-    cargo auditable build --release --frozen && \
+    cargo auditable build --release --locked  --target x86_64-unknown-linux-musl && \
     rm -rf src
+
 
 # Copy source code
 COPY src ./src
 
 # Build application with static linking for Alpine
-RUN touch src/main.rs && cargo auditable build --release --frozen
+RUN touch src/main.rs && cargo auditable build --release --locked
 
 # Runtime stage
 FROM alpine:${ALPINE_VERSION}
