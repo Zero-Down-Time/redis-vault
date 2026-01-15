@@ -22,7 +22,6 @@ RUN mkdir src && \
     cargo auditable build --release --locked && \
     rm -rf src
 
-
 # Copy source code
 COPY src ./src
 
