@@ -29,6 +29,6 @@ test-data/
 *.backup
 
 # secrets ?
-*.key
-*.pem
-*.p12
+ *.key
+ *.pem
+ *.p12

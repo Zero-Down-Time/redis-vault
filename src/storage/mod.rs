@@ -31,7 +31,7 @@ pub enum StorageType {
     GS,
 }
 
-/// Storage URL, "(s3|gs)://bucket</prefix>"
+/// Storage URL, "(s3|gs)://bucket/prefix"
 #[derive(Debug, Clone)]
 pub struct StorageConfig {
     pub storage_type: StorageType,
