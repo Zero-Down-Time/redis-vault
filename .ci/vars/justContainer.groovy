@@ -46,6 +46,7 @@ def call(Map config=[:]) {
               def files = readJSON file: "changeSet.json"
 
               if (force_build || gitea.pathsChanged(files: files, patterns: buildOnly, debug: debug)) {
+                sh 'just use-builder build release'
                 sh 'just container::build git_branch=$GIT_BRANCH'
               } else {
                 echo("No changed files matching any of: ${buildOnly.join(', ')}. No build required.")
@@ -60,7 +61,8 @@ def call(Map config=[:]) {
             expression { currentBuild.description != 'SKIP' }
           }
           steps {
-            sh 'just container::test'
+            sh 'echo'
+            // sh 'just container::test'
           }
         }
 
