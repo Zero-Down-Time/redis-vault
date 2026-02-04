@@ -1,8 +1,6 @@
 import 'builder.just'
 import 'git.just'
 
-#CMD := "buildah run -t $(cat .builder) --"
-
 prepare:
   cargo fetch --locked
 
