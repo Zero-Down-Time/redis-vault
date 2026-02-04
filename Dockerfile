@@ -12,9 +12,10 @@ RUN cd /etc/apk/keys && \
     ca-certificates \
     tini \
     libgcc \
-    libssl3 \
-    redis-vault@kubezero && \
+    libssl3 && \
     rm -rf /var/cache/apk/*
+
+ADD target/release/redis-vault /usr/local/bin/redis-vault
 
 # Create non-root user and group
 RUN addgroup -g 1000 vault && \
