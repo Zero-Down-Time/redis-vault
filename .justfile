@@ -1,5 +1,6 @@
 # Rust owns the root namespace
 import '.ci/rust.just'
+import '.ci/builder.just'
 
 # container image tasks
 mod container '.ci/container.just'
