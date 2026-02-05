@@ -62,8 +62,8 @@ def call(Map config=[:]) {
             expression { currentBuild.description != 'SKIP' }
           }
           steps {
-            sh 'echo'
-            // sh 'just container::test'
+            sh "echo"
+            // sh "just container::test"
           }
         }
 
