@@ -5,7 +5,7 @@ build image=git_repo_name:
   podman build --rm --layers -t {{ image }}:{{ git_tag }}-{{ arch }} --build-arg TAG={{ git_tag }} --build-arg ARCH={{ arch }} --platform linux/{{ arch }} .
 
 # Scan image using grype
-scan image=git_repo_name: build
+scan image=git_repo_name:
   grype podman:localhost/{{ image }}:{{ git_tag }}-{{ arch }}
 
 # log into AWS ECR public
