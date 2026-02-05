@@ -5,7 +5,7 @@ prepare:
   cargo fetch --locked
 
 lint: prepare
-  cargo clippy --workspace
+  cargo clippy --workspace -r --locked
   cargo deny check -s
 
 fmt:
