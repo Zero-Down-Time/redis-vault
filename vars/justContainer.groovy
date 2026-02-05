@@ -4,7 +4,7 @@ def call(Map config=[:]) {
     def buildOnly = config.buildOnly ?: ['.*']
     def debug = config.debug ?: false
     def force_build = config.force_build ?: false
-    def imageName = config.imageName ?: env.JOB_NAME
+    def imageName = config.imageName ?: env.JOB_BASE_NAME
 
     pipeline {
       options {
@@ -26,16 +26,16 @@ def call(Map config=[:]) {
             }
 
             // Optional project specific preparations
-            sh 'mkdir -p reports'
+            sh "mkdir -p reports"
 
             // Build project specific builder
-            sh 'just update-builder'
+            sh "just update-builder"
           }
         }
 
         stage('Lint') {
           steps {
-            sh 'just use-builder lint'
+            sh "just use-builder lint"
           }
         }
 
@@ -47,8 +47,8 @@ def call(Map config=[:]) {
               def files = readJSON file: "changeSet.json"
 
               if (force_build || gitea.pathsChanged(files: files, patterns: buildOnly, debug: debug)) {
-                sh 'just use-builder build release'
-                sh 'just container::build ${imageName}'
+                sh "just use-builder build release"
+                sh "just container::build ${imageName}"
               } else {
                 echo("No changed files matching any of: ${buildOnly.join(', ')}. No build required.")
                 currentBuild.description = 'SKIP'
@@ -74,7 +74,7 @@ def call(Map config=[:]) {
           }
           steps {
             // we always scan and create the full json report
-            sh 'GRYPE_OUTPUT=json GRYPE_FILE="reports/grype-report.json" just container::scan ${imageName}'
+            sh "GRYPE_OUTPUT=json GRYPE_FILE='reports/grype-report.json' just container::scan ${imageName}"
 
             // fail build if grypeFail is set, default is any ERROR marks build unstable
             script {
@@ -96,15 +96,15 @@ def call(Map config=[:]) {
             not { changeRequest() }
           }
           steps {
-            sh 'just container::push ${imageName}'
-            sh 'just container::rm-remote-untagged ${imageName}'
+            sh "just container::push ${imageName}"
+            sh "just container::rm-remote-untagged ${imageName}"
           }
         }
 
         // generic clean
         stage('cleanup') {
           steps {
-            sh 'just container::clean ${imageName}'
+            sh "just container::clean ${imageName}"
           }
         }
       }
