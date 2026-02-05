@@ -20,6 +20,7 @@ tag := if git_branch =~ "^(main|master)$" {
 _addCommitTagPush version +files:
   git add {{ files }}
   git commit -m "ci: Release {{ version }}"
+  git tag -a {{ version }} -m"Release: {{ version }}"
   git push && git push --tags
 
 
