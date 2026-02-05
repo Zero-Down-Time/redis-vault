@@ -2,10 +2,10 @@ import 'builder.just'
 import 'git.just'
 
 prepare:
-  cargo fetch --locked
+  cargo fetch
 
 lint: prepare
-  cargo clippy --workspace -r --locked
+  cargo clippy --workspace -r
   cargo deny check -s
 
 fmt:
