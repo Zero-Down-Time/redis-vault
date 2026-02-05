@@ -47,7 +47,7 @@ def call(Map config=[:]) {
 
               if (force_build || gitea.pathsChanged(files: files, patterns: buildOnly, debug: debug)) {
                 sh 'just use-builder build release'
-                sh 'just container::build --git_branch $GIT_BRANCH'
+                sh 'just container::build git_branch=$GIT_BRANCH'
               } else {
                 echo("No changed files matching any of: ${buildOnly.join(', ')}. No build required.")
                 currentBuild.description = 'SKIP'
