@@ -4,7 +4,7 @@ def call(Map config=[:]) {
     def buildOnly = config.buildOnly ?: ['.*']
     def debug = config.debug ?: false
     def force_build = config.force_build ?: false
-    def imageName = config.imageName ?: env.JOB_BASE_NAME
+    def imageName = config.imageName ?: ""
 
     pipeline {
       options {
