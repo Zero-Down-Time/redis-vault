@@ -10,8 +10,18 @@ RUN apk add --no-cache \
   cargo-deny \
   rust-clippy \
   rustfmt \
+  mold \
   sccache \
   just \
   openssl-dev
+
+RUN mkdir /root/.cargo && \
+<<EOF cat >> /root/.cargo/config.toml
+[target.'cfg(target_os = "linux")']
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+[build]
+rustc-wrapper = "/usr/bin/sccache"
+EOF
 
 WORKDIR /app
