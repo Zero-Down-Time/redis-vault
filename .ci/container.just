@@ -42,6 +42,7 @@ clean image=git_repo_name extra_tags="":
   done
 
 # delete all remote untagged and in-dev images, keep 10 tagged
+[no-cd]
 rm-remote-untagged image=git_repo_name:
   @echo "Removing all untagged and in-dev images from {{ image }}"
-  ./ecr_public_lifecycle.py --repo {{ image }} --dev
+  .ci/ecr_public_lifecycle.py --repo {{ image }} --dev
