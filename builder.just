@@ -1,3 +1,5 @@
+set dotenv-load
+
 update-builder target="rust":
   podman build -t local-podman-builder -f .ci/Dockerfile.{{ target }}
 

@@ -13,14 +13,7 @@ RUN apk add --no-cache \
   sccache \
   just \
   openssl-dev
-  #mold \
 
-RUN mkdir /root/.cargo && \
-<<EOF cat >> /root/.cargo/config.toml
-#[target.'cfg(target_os = "linux")']
-#rustflags = ["-C", "link-arg=-fuse-ld=mold"]
-[build]
-rustc-wrapper = "/usr/bin/sccache"
-EOF
+ENV RUSTC_WRAPPER=/usr/bin/sccache
 
 WORKDIR /app
