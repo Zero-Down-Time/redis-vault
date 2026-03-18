@@ -25,6 +25,9 @@ def call(Map config=[:]) {
               stash includes: 'changeSet.json', name: 'changeSet'
             }
 
+            // Overwrite build files from the target/origin branch
+            protectBuildFiles(['Makefile', '.justfile', '.ci/**'])
+
             // Optional project specific preparations
             sh "mkdir -p reports"
 
