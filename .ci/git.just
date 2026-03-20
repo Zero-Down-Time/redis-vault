@@ -42,3 +42,19 @@ _git-debug: (_validate-arch arch)
 # pull latest shared .ci subtree
 ci-pull-upstream:
 	git subtree pull --prefix .ci ssh://git@git.zero-downtime.net/ZeroDownTime/ci-tools-lib.git main --squash -m "Merge latest ci-tools-lib"
+
+cleanup-tags tag:
+  #!/usr/bin/env bash
+  if ! git rev-parse "refs/tags/{{tag}}" >/dev/null 2>&1; then
+    echo "Error: tag {{tag}} does not exist" >&2
+    exit 1
+  fi
+
+  TAGS=$(git tag --sort=version:refname | sed "/{{tag}}/q" | head -n -1)
+  COUNT=$(echo "$TAGS" | grep -c . || true)
+  echo "Deleting $COUNT tags up to {{tag}}"
+
+  if [ "$COUNT" -gt 0 ]; then
+    echo "$TAGS" | xargs -I{} git tag -d {}
+    echo "$TAGS" | sed 's|.*|:refs/tags/&|' | xargs git push origin
+  fi
