@@ -29,22 +29,26 @@ def call(Map config=[:]) {
             // Overwrite build files from the target/origin branch
             protectBuildFiles(['.justfile', '.ci/**'])
 
-            // Optional project specific preparations
-            sh "mkdir -p reports"
+            script {
+              // build reports
+              sh "mkdir -p reports"
 
-            // Build project specific builder
-            if (needBuilder) {
-              sh "just update-builder"
+              // Build project specific builder
+              if (needBuilder) {
+                sh "just update-builder"
+              }
             }
           }
         }
 
         stage('Lint') {
           steps {
-            if (needBuilder) {
-              sh "just use-builder lint"
-            } else {
-              sh "just lint"
+            script {
+              if (needBuilder) {
+                sh "just use-builder lint"
+              } else {
+                sh "just lint"
+              }
             }
           }
         }
