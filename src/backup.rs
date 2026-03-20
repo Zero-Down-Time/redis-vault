@@ -235,7 +235,7 @@ impl BackupManager {
         let mut backups = client.list(&self.storage.bucket, &node_prefix).await?;
 
         // Sort by timestamp (newest first)
-        backups.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        backups.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
 
         // Determine which backups to keep
         let mut keep_indices = HashSet::new();
