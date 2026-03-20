@@ -4,6 +4,7 @@ def call(Map config=[:]) {
     def buildOnly = config.buildOnly ?: ['.*']
     def debug = config.debug ?: false
     def force_build = config.force_build ?: false
+    def needBuilder = config.needBuilder ?: false
     def imageName = config.imageName ?: ""
 
     pipeline {
@@ -26,19 +27,25 @@ def call(Map config=[:]) {
             }
 
             // Overwrite build files from the target/origin branch
-            protectBuildFiles(['Makefile', '.justfile', '.ci/**'])
+            protectBuildFiles(['.justfile', '.ci/**'])
 
             // Optional project specific preparations
             sh "mkdir -p reports"
 
             // Build project specific builder
-            sh "just update-builder"
+            if (needBuilder) {
+              sh "just update-builder"
+            }
           }
         }
 
         stage('Lint') {
           steps {
-            sh "just use-builder lint"
+            if (needBuilder) {
+              sh "just use-builder lint"
+            } else {
+              sh "just lint"
+            }
           }
         }
 
@@ -50,7 +57,9 @@ def call(Map config=[:]) {
               def files = readJSON file: "changeSet.json"
 
               if (force_build || gitea.pathsChanged(files: files, patterns: buildOnly, debug: debug)) {
-                sh "just use-builder build release"
+                if (needBuilder) {
+                  sh "just use-builder build release"
+                }
                 sh "just container::build ${imageName}"
               } else {
                 echo("No changed files matching any of: ${buildOnly.join(', ')}. No build required.")
