@@ -6,6 +6,7 @@ def call(Map config=[:]) {
     def force_build = config.force_build ?: false
     def needBuilder = config.needBuilder ?: false
     def imageName = config.imageName ?: ""
+    def scanFail = config.scanFail ?: true
 
     pipeline {
       options {
@@ -44,6 +45,9 @@ def call(Map config=[:]) {
         stage('Lint') {
           steps {
             script {
+              // Scan for secrets first thing
+              sh "betterleaks dir . --validation false --report-path reports/betterleaks-src-report.json --report-format sarif"
+
               if (needBuilder) {
                 sh "just use-builder lint"
               } else {
@@ -91,16 +95,6 @@ def call(Map config=[:]) {
           steps {
             // we always scan and create the full json report
             sh "GRYPE_OUTPUT=json GRYPE_FILE='reports/grype-report.json' just container::scan ${imageName}"
-
-            // fail build if grypeFail is set, default is any ERROR marks build unstable
-            script {
-              def failBuild=config.grypeFail
-              if (failBuild == null || failBuild.isEmpty()) {
-                  recordIssues enabledForFailure: true, tool: grype(), sourceCodeRetention: 'NEVER', skipPublishingChecks: true, qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: 'NOTE']]
-              } else {
-                  recordIssues enabledForFailure: true, tool: grype(), sourceCodeRetention: 'NEVER', skipPublishingChecks: true, qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: 'FAILURE']]
-              }
-            }
           }
         }
 
@@ -122,6 +116,22 @@ def call(Map config=[:]) {
           steps {
             sh "just container::clean ${imageName}"
           }
+        }
+      }
+
+      post {
+        always {
+          recordIssues (
+            enabledForFailure: true, sourceCodeRetention: 'NEVER', skipPublishingChecks: true,
+            qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: scanFail ? 'CRITICAL' : 'NOTE']],
+            tools: [
+              grype(),
+              sarif(pattern: 'reports/betterleaks*.json')
+            ]
+          )
+        }
+        cleanup {
+          sh "rm -rf reports"
         }
       }
     }
