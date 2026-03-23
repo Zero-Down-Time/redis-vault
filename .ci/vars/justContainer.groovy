@@ -6,7 +6,7 @@ def call(Map config=[:]) {
     def force_build = config.force_build ?: false
     def needBuilder = config.needBuilder ?: false
     def imageName = config.imageName ?: ""
-    def scanFail = config.scanFail ?: true
+    def scanFail = config.scanFail != null ? config.scanFail : true
 
     pipeline {
       options {
@@ -17,22 +17,25 @@ def call(Map config=[:]) {
           label 'podman-aws-grype'
         }
       }
+      environment {
+        TMP_DIR = "_tmp"
+      }
       stages {
         stage('Prepare') {
           steps {
             // create and stash changeSet
             script {
               def files = gitea.getChangeset(debug: debug)
-              writeJSON file: 'changeSet.json', json: files
-              stash includes: 'changeSet.json', name: 'changeSet'
+              writeJSON file: "${TMP_DIR}/changeSet.json", json: files
+              stash includes: "${TMP_DIR}/changeSet.json", name: 'changeSet'
             }
 
             // Overwrite build files from the target/origin branch
             protectBuildFiles(['.justfile', '.ci/**'])
 
             script {
-              // build reports
-              sh "mkdir -p reports"
+              // build reports dir outside workspace to not pollute the source tree
+              sh "mkdir -p ${TMP_DIR}"
 
               // Build project specific builder
               if (needBuilder) {
@@ -44,10 +47,20 @@ def call(Map config=[:]) {
 
         stage('Lint') {
           steps {
-            script {
-              // Scan for secrets first thing
-              sh "betterleaks dir . --validation false --report-path reports/betterleaks-src-report.json --report-format sarif"
+            // Scan for secrets first thing
+            sh "betterleaks dir . --validation false  --no-banner --no-color --report-path ${TMP_DIR}/betterleaks-src-report.json --report-format sarif"
+            recordIssues (
+              enabledForFailure: true,
+              sourceCodeRetention: 'NEVER',
+              skipPublishingChecks: true,
+              quiet: true,
+              qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: scanFail ? 'FAILURE' : 'NOTE']],
+              tools: [
+                sarif(pattern: "${TMP_DIR}/betterleaks-src-report.json", name: 'Source Leaks', id: 'source-leaks')
+              ]
+            )
 
+            script {
               if (needBuilder) {
                 sh "just use-builder lint"
               } else {
@@ -59,10 +72,13 @@ def call(Map config=[:]) {
 
         // Build using rootless podman
         stage('Build') {
+          when {
+            expression { currentBuild.currentResult != 'FAILURE' }
+          }
           steps {
             script {
               unstash 'changeSet'
-              def files = readJSON file: "changeSet.json"
+              def files = readJSON file: "${TMP_DIR}/changeSet.json"
 
               if (force_build || gitea.pathsChanged(files: files, patterns: buildOnly, debug: debug)) {
                 if (needBuilder) {
@@ -80,6 +96,7 @@ def call(Map config=[:]) {
         stage('Test') {
           when {
             expression { currentBuild.description != 'SKIP' }
+            expression { currentBuild.currentResult != 'FAILURE' }
           }
           steps {
             sh "echo"
@@ -87,22 +104,46 @@ def call(Map config=[:]) {
           }
         }
 
-        // Scan using grype
+        // Scan using grype and evaluate results via quality gates
         stage('Scan') {
           when {
             expression { currentBuild.description != 'SKIP' }
+            expression { currentBuild.currentResult != 'FAILURE' }
           }
           steps {
-            // we always scan and create the full json report
-            sh "GRYPE_OUTPUT=json GRYPE_FILE='reports/grype-report.json' just container::scan ${imageName}"
+            // Scan built container for secrets vulnerabilities
+            sh "GRYPE_LOG_QUIET=true GRYPE_OUTPUT=json GRYPE_FILE=${TMP_DIR}/grype-report.json BETTERLEAKS_FILE=${TMP_DIR}/betterleaks-image-report.json \
+              just container::scan ${TMP_DIR} ${imageName}"
+            recordIssues (
+              enabledForFailure: true,
+              sourceCodeRetention: 'NEVER',
+              skipPublishingChecks: true,
+              quiet: true,
+              qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: scanFail ? 'FAILURE' : 'NOTE']],
+              tools: [
+                grype(pattern: "${TMP_DIR}/grype-report.json")
+              ]
+            )
+
+            recordIssues (
+              enabledForFailure: true,
+              sourceCodeRetention: 'NEVER',
+              skipPublishingChecks: true,
+              quiet: true,
+              qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: scanFail ? 'FAILURE' : 'NOTE']],
+              tools: [
+                sarif(pattern: "${TMP_DIR}/betterleaks-image-report.json", id: 'image-leaks', name: 'Image Leaks')
+              ]
+            )
           }
         }
 
-        // Push to container registry if not PR
+        // Push to container registry if not PR and scans passed
         // incl. basic registry retention removing any untagged images
         stage('Push') {
           when {
             expression { currentBuild.description != 'SKIP' }
+            expression { currentBuild.currentResult != 'FAILURE' }
             not { changeRequest() }
           }
           steps {
@@ -111,8 +152,12 @@ def call(Map config=[:]) {
           }
         }
 
-        // generic clean
+        // generic clean, dont clean if FAILURE to speed up quick fix cycles via caching
         stage('cleanup') {
+          when {
+            expression { currentBuild.description != 'SKIP' }
+            expression { currentBuild.currentResult != 'FAILURE' }
+          }
           steps {
             sh "just container::clean ${imageName}"
           }
@@ -120,18 +165,8 @@ def call(Map config=[:]) {
       }
 
       post {
-        always {
-          recordIssues (
-            enabledForFailure: true, sourceCodeRetention: 'NEVER', skipPublishingChecks: true,
-            qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: scanFail ? 'CRITICAL' : 'NOTE']],
-            tools: [
-              grype(),
-              sarif(pattern: 'reports/betterleaks*.json')
-            ]
-          )
-        }
         cleanup {
-          sh "rm -rf reports"
+          sh "rm -rf ${TMP_DIR}"
         }
       }
     }

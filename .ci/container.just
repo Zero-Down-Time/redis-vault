@@ -4,9 +4,20 @@ import 'git.just'
 build image=git_repo_name:
   podman build --rm --layers -t {{ image }}:{{ git_tag }}-{{ arch }} --build-arg TAG={{ git_tag }} --build-arg ARCH={{ arch }} --platform linux/{{ arch }} .
 
-# Scan image using grype
-scan image=git_repo_name:
-  grype podman:localhost/{{ image }}:{{ git_tag }}-{{ arch }}
+# Scan image for secrets and vulnerabilities
+[no-cd]
+scan tmp="." image=git_repo_name:
+  #!/usr/bin/env bash
+  set -eo pipefail
+  echo "Extracting rootfs of {{ image }}:{{ git_tag }}-{{ arch }} ..."
+  _cid=$(podman create {{ image }}:{{ git_tag }}-{{ arch }})
+  trap "podman rm $_cid > /dev/null" EXIT
+  mkdir -p {{ tmp }}/rootfs
+  podman export $_cid | tar xf - -C {{ tmp }}/rootfs
+  [ -n "$BETTERLEAKS_FILE" ] && BETTERLEAKS_OPTS="--no-banner --no-color --report-path $BETTERLEAKS_FILE --report-format sarif"
+  betterleaks dir {{ tmp }}/rootfs --validation false $BETTERLEAKS_OPTS
+  grype dir:{{ tmp }}/rootfs
+  rm -rf {{ tmp }}/rootfs
 
 # log into AWS ECR public
 ecr-login registry="public.ecr.aws/zero-downtime":  

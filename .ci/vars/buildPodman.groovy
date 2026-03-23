@@ -91,6 +91,7 @@ def call(Map config=[:]) {
         stage('Push') {
           when {
             expression { currentBuild.description != 'SKIP' }
+            expression { currentBuild.currentResult != 'FAILURE' }
             not { changeRequest() }
           }
           steps {
