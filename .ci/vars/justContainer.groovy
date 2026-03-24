@@ -48,12 +48,13 @@ def call(Map config=[:]) {
         stage('Lint') {
           steps {
             // Scan for secrets first thing
-            sh "betterleaks dir . --validation false  --no-banner --no-color --report-path ${TMP_DIR}/betterleaks-src-report.json --report-format sarif"
+            sh "betterleaks dir . --validation false --exit-code 0 --no-banner --no-color --report-path ${TMP_DIR}/betterleaks-src-report.json --report-format sarif"
             recordIssues (
               enabledForFailure: true,
               sourceCodeRetention: 'NEVER',
               skipPublishingChecks: true,
               quiet: true,
+              skipBlames: true,
               qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: scanFail ? 'FAILURE' : 'NOTE']],
               tools: [
                 sarif(pattern: "${TMP_DIR}/betterleaks-src-report.json", name: 'Source Leaks', id: 'source-leaks')
@@ -119,6 +120,7 @@ def call(Map config=[:]) {
               sourceCodeRetention: 'NEVER',
               skipPublishingChecks: true,
               quiet: true,
+              skipBlames: true,
               qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: scanFail ? 'FAILURE' : 'NOTE']],
               tools: [
                 grype(pattern: "${TMP_DIR}/grype-report.json")
@@ -130,6 +132,7 @@ def call(Map config=[:]) {
               sourceCodeRetention: 'NEVER',
               skipPublishingChecks: true,
               quiet: true,
+              skipBlames: true,
               qualityGates: [[threshold: 1, type: 'TOTAL_ERROR', criticality: scanFail ? 'FAILURE' : 'NOTE']],
               tools: [
                 sarif(pattern: "${TMP_DIR}/betterleaks-image-report.json", id: 'image-leaks', name: 'Image Leaks')

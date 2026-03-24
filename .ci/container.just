@@ -15,7 +15,7 @@ scan tmp="." image=git_repo_name:
   mkdir -p {{ tmp }}/rootfs
   podman export $_cid | tar xf - -C {{ tmp }}/rootfs
   [ -n "$BETTERLEAKS_FILE" ] && BETTERLEAKS_OPTS="--no-banner --no-color --report-path $BETTERLEAKS_FILE --report-format sarif"
-  betterleaks dir {{ tmp }}/rootfs --validation false $BETTERLEAKS_OPTS
+  betterleaks dir {{ tmp }}/rootfs --validation false --exit-code 0 $BETTERLEAKS_OPTS
   grype dir:{{ tmp }}/rootfs
   rm -rf {{ tmp }}/rootfs
 
