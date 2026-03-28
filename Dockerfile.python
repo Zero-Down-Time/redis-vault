@@ -5,16 +5,15 @@ FROM alpine:${ALPINE_VERSION} as builder
 
 # build dependencies
 RUN apk add --no-cache \
-  py3-hatchling \
-  py3-hatch-vcs \
-  py3-flake8 \
-  py3-pytest \
-  twine \
   git \
-  sccache \
   just \
-  openssl-dev
+  openssl-dev \
+  python3 \
+  uv
 
-ENV RUSTC_WRAPPER=/usr/bin/sccache
+ENV UV_LINK_MODE=copy
+ENV UV_NO_CACHE=true
+ENV UV_PYTHON_DOWNLOADS=0
+ENV UV_COMPILE_BYTECODE=0
 
 WORKDIR /app
