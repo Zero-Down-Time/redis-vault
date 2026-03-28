@@ -1,24 +1,27 @@
 import 'builder.just'
 import 'git.just'
 
+prepare:
+  uv sync --locked --no-install-project --no-editable
+
 fmt:
-  autopep8 -ir .
+  uv run --extra dev autopep8 -ir .
 
 lint:
-  flake8
+  uv run --extra dev flake8 .
 
 # requires 1.45 [arg('target', pattern='(release)?')]
 build target="":
-  hatchling build
+  uv build
 
-test: build
-  TEST=True pytest --log-cli-level=DEBUG
+test:
+  uv run --extra dev pytest --log-cli-level=DEBUG
 
 clean:
-  rm -rf .pytest_cache dist
+  rm -rf .venv .pytest_cache dist
 
-test_upload: build
-	twine upload --repository-url https://test.pypi.org/legacy/ --non-interactive dist/*.whl
+test_upload:
+	uv publish --index testpypi --dry-run
 
-upload: build
-	twine upload -r pypi --non-interactive  dist/*.whl
+upload:
+  uv publish
