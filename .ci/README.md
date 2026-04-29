@@ -34,9 +34,8 @@ import '.ci/git.just'
 **Using Make** (deprecated — support will be removed midterm) — Create a top-level `Makefile`:
 
 ```makefile
-REGISTRY := <your-registry>
+REGISTRY := public.ecr.aws/<alias>             # or 1234567890.dkr.ecr.<region>.amazonaws.com
 IMAGE := <image_name>
-REGION := <AWS region of your registry>
 
 include .ci/podman.mk
 ```
@@ -50,9 +49,10 @@ Add a `Jenkinsfile` using the shared libraries:
 
 // Just-based projects (recommended)
 justContainer(
-  buildOnly: ['src/.*', '.justfile'],
+  imageName:   'my-app',
+  registry:    'public.ecr.aws/<alias>',  // or '<account>.dkr.ecr.<region>.amazonaws.com'
+  buildOnly:   ['src/.*', '.justfile'],
   needBuilder: true,
-  imageName: 'my-app',
 )
 
 // Or Make-based projects (deprecated)
@@ -61,16 +61,19 @@ buildPodman(
 )
 ```
 
+`registry` is required — set it explicitly per project. The library auto-detects public vs private ECR from the URL shape (`public.ecr.aws/...` vs `*.dkr.ecr.<region>.amazonaws.com`) and dispatches to the correct `aws ecr` / `aws ecr-public` API. Region for private is parsed from the hostname. Both the agent and dev workstation need ambient AWS credentials in scope (env vars, instance profile, etc.) — the library does no credential plumbing.
+
 ## Components
 
 ### Just — `.just` modules (recommended)
 
 | Module            | Key Recipes                                              |
 |-------------------|----------------------------------------------------------|
-| `container.just`  | `build`, `scan`, `push`, `ecr-login`, `clean`, manifest management |
+| `container.just`  | `build`, `scan`, `push`, `ecr-login`, `create-repo`, `clean`, manifest management. Public and private AWS ECR auto-detected; override default via `REGISTRY` env var. |
 | `rust.just`       | `prepare`, `lint` (clippy + cargo-deny), `build`, `test`, version bumping |
 | `git.just`        | Version computation from tags, `tag-push`, legacy tag cleanup |
 | `builder.just`    | Builder container creation and execution via Buildah      |
+| `common.just`     | `scan-src` source secret scan; imported by language modules |
 
 ### Make — `podman.mk` (deprecated — support will be removed midterm)
 
@@ -88,7 +91,7 @@ Common Makefile include providing standardized build targets:
 | `make push`           | Push image to registry               |
 | `make ecr-login`      | Login to AWS ECR                     |
 | `make rm-remote-untagged` | Cleanup untagged/dev images     |
-| `make create-repo`    | Create AWS ECR public repository     |
+| `make create-repo`    | Create AWS ECR (public or private) repository |
 | `make clean`          | Clean up build artifacts             |
 | `make ci-pull-upstream` | Pull latest `.ci` subtree          |
 
@@ -105,7 +108,7 @@ Common Makefile include providing standardized build targets:
 
 ### Utilities
 
-- **`ecr_public_lifecycle.py`** — Python utility (requires `boto3`) to manage ECR image lifecycle: removes untagged images, prunes old dev-tagged images, keeps a configurable number of recent tagged images.
+- **`ecr_lifecycle.py`** — Python utility (requires `boto3`) to manage ECR image lifecycle for public *and* private ECR: removes untagged images, prunes old dev-tagged images, keeps a configurable number of recent tagged images. Detects public vs private from the `--registry` URL.
 - **`utils.sh`** — Bash helpers for semantic version bumping (`bumpVersion`) and git commit/tag/push automation (`addCommitTagPush`).
 - **`Dockerfile.rust`** — Multi-stage Rust builder image (Alpine 3.23) with cargo, clippy, sccache, cargo-auditable, cargo-deny, and just.
 
@@ -146,12 +149,45 @@ mod container '../../.ci/container.just'
 justContainer(
     workDir:     'services/api-users',
     imageName:   'api-users',
+    registry:    '1234567890.dkr.ecr.us-east-1.amazonaws.com',  // or public.ecr.aws/<alias>
     buildOnly:   ['services/api-users/.*', '\\.ci/.*'],
     needBuilder: true,
 )
 ```
 
-`protect` defaults to `["${workDir}/.justfile", '.ci/**']`, so a service-scoped justfile is restored from the target branch on PR builds without needing to override it. Tag releases as `api-users/v1.2.3` and configure the Jenkins multibranch project's *Script Path* to `services/*/Jenkinsfile`.
+`protect` defaults to `["${workDir}/.justfile", "${workDir}/Jenkinsfile", '.ci/**']`, so service-scoped build files are restored from the target branch on PR builds without needing to override it. Tag releases as `api-users/v1.2.3` and configure the Jenkins multibranch project's *Script Path* to `services/*/Jenkinsfile`.
+
+## Local dev
+
+Recipes that touch the registry take it as their first positional argument:
+
+```bash
+just container::build my-app                                          # registry not needed
+just container::ecr-login public.ecr.aws/<alias>
+just container::push public.ecr.aws/<alias> my-app
+just container::create-repo public.ecr.aws/<alias> my-app
+```
+
+For ergonomics, define the registry once in your project's root `.justfile` and add convenience wrappers:
+
+```just
+registry := "public.ecr.aws/<alias>"          # or "<account>.dkr.ecr.<region>.amazonaws.com"
+
+mod container '.ci/container.just'
+import '.ci/python.just'                       # or rust.just
+
+# Convenience wrappers — pass the registry through to module recipes
+push image="":
+  just container::push {{ registry }} {{ image }}
+
+ecr-login:
+  just container::ecr-login {{ registry }}
+
+create-repo image="":
+  just container::create-repo {{ registry }} {{ image }}
+```
+
+`build`, `scan`, and `clean` recipes don't take a registry, so they remain reachable as `just container::build` etc. without any wrapping. The Jenkins glue passes the registry directly from the `registry:` config field — consumers don't need wrappers for CI.
 
 ## Maintenance
 
