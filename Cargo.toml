@@ -9,24 +9,24 @@ keywords = ["redis", "kubernetes", "sidecar"]
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1"
-aws-sdk-s3 = "1.122"
+aws-sdk-s3 = "1.131"
 aws-config = "1.8"
 bytes = "1.11"
 chrono = "0.4"
-clap = { version = "4.5", features = ["derive", "env"] }
-gcloud-storage = "1.2"
+clap = { version = "4.6", features = ["derive", "env"] }
+gcloud-storage = "1.3"
 git-version = "0.3.9"
 http-body-util = "0.1"
 humantime = "2.3"
-hyper = { version = "1.8", features = ["server", "http1"] }
+hyper = { version = "1.9", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio", "server", "server-auto"] }
 prometheus = "0.14"
-redis = { version = "1.0", features = ["tokio-comp", "connection-manager"] }
+redis = { version = "1.2", features = ["tokio-comp", "connection-manager"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 thiserror = "2.0"
-tokio = { version = "1.49", features = ["full"] }
+tokio = { version = "1.52", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
