@@ -5,6 +5,7 @@ import '.ci/rust.just'
 mod container '.ci/container.just'
 
 toolchain := "rust"
+registry := "public.ecr.aws/zero-downtime"
 
 default: build
 
