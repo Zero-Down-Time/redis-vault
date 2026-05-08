@@ -11,6 +11,9 @@ all-features = true
 
 [advisories]
 ignore = [
+    { id = "RUSTSEC-2026-0098", reason = "rustls-webpki: via aws-sdk; not exploitable without CA misissuance" },
+    { id = "RUSTSEC-2026-0099", reason = "rustls-webpki: same path; URI/wildcard name constraints unused" },
+    { id = "RUSTSEC-2026-0104", reason = "rustls-webpki: no CRL parsing in our code path" },
 ]
 
 [bans]

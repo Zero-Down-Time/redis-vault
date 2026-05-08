@@ -4,6 +4,7 @@
 
 **Minimize dependencies:**
 - Prefer std library when possible
+- All dependencies must use `default-features = false` with an explicit feature list — never rely on default features
 
 ## Security Practices
 
