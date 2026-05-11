@@ -5,8 +5,14 @@ import 'git.just'
 prepare:
   cargo fetch
 
-lint:
-  cargo clippy --workspace -r
+# requires 1.45 [arg('target', pattern='(release)?')]
+lint target="":
+  #!/usr/bin/env sh
+  if [ "{{ target }}" == "release" ]; then
+    cargo clippy --workspace --locked --release
+  else
+    cargo clippy --workspace --locked
+  fi
   cargo deny check -s
 
 fmt:
@@ -21,8 +27,14 @@ build target="":
     cargo auditable build --locked
   fi
 
-test:
-  cargo test
+# requires 1.45 [arg('target', pattern='(release)?')]
+test target="":
+  #!/usr/bin/env sh
+  if [ "{{ target }}" == "release" ]; then
+    cargo test --locked --release
+  else
+    cargo test --locked
+  fi
 
 clean:
   cargo clean

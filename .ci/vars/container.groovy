@@ -57,9 +57,9 @@ def lint(Map config = [:]) {
         )
 
         if (needBuilder) {
-            sh "if just --summary | grep -q lint; then just use-builder lint; fi"
+            sh "if just --summary | grep -q lint; then just use-builder lint release; fi"
         } else {
-            sh "if just --summary | grep -q lint; then just lint; fi"
+            sh "if just --summary | grep -q lint; then just lint release; fi"
         }
     }
 }
@@ -104,9 +104,9 @@ def test(Map config = [:]) {
 
     dir(workDir) {
         if (needBuilder) {
-            sh "if just --summary | grep -q test; then just use-builder test; fi"
+            sh "if just --summary | grep -q test; then just use-builder test release; fi"
         } else {
-            sh "if just --summary | grep -q test; then just test; fi"
+            sh "if just --summary | grep -q test; then just test release; fi"
         }
     }
 }
