@@ -5,7 +5,8 @@ import 'git.just'
 prepare:
   uv sync --locked --no-install-project --no-editable
 
-fmt:
+# requires 1.45 [arg('target', pattern='(release)?')]
+fmt target="":
   uv run --extra dev autopep8 -ir .
 
 # requires 1.45 [arg('target', pattern='(release)?')]

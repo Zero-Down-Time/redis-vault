@@ -9,14 +9,20 @@ prepare:
 lint target="":
   #!/usr/bin/env sh
   if [ "{{ target }}" == "release" ]; then
-    cargo clippy --workspace --locked --release
+    cargo clippy --workspace --locked --all-targets --release -- -D warnings
   else
-    cargo clippy --workspace --locked
+    cargo clippy --workspace --locked --all-targets -- -D warnings
   fi
   cargo deny check -s
 
-fmt:
-  cargo fmt
+# requires 1.45 [arg('target', pattern='(release)?')]
+fmt target="":
+  #!/usr/bin/env sh
+  if [ "{{ target }}" == "release" ]; then
+    cargo fmt --check
+  else
+    cargo fmt
+  fi
 
 # requires 1.45 [arg('target', pattern='(release)?')]
 build target="":
