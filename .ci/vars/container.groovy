@@ -57,8 +57,10 @@ def lint(Map config = [:]) {
         )
 
         if (needBuilder) {
+            sh "if just --summary | grep -q fmt; then just use-builder fmt release; fi"
             sh "if just --summary | grep -q lint; then just use-builder lint release; fi"
         } else {
+            sh "if just --summary | grep -q fmt; then just fmt release; fi"
             sh "if just --summary | grep -q lint; then just lint release; fi"
         }
     }
