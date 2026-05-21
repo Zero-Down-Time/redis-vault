@@ -7,7 +7,11 @@ import 'git.just'
 
 [no-cd]
 build image=git_repo_name:
+  #!/usr/bin/env bash
+  set -eo pipefail
   podman build --rm --layers -t {{ image }}:{{ git_tag }}-{{ arch }} --build-arg TAG={{ git_tag }} --build-arg ARCH={{ arch }} --platform linux/{{ arch }} .
+  size=$(podman image inspect {{ image }}:{{ git_tag }}-{{ arch }} | jq -r '.[0].Size')
+  echo "Image {{ image }}:{{ git_tag }}-{{ arch }} size: $size bytes ($(awk -v s="$size" 'BEGIN { printf "%.2f MB", s/1024/1024 }'))"
 
 # Scan image for secrets and vulnerabilities
 [no-cd]
@@ -20,6 +24,7 @@ scan tmp="." image=git_repo_name:
   rm -rf {{ tmp }}/rootfs
   mkdir -p {{ tmp }}/rootfs
   podman export $_cid | tar xf - -C {{ tmp }}/rootfs
+  echo "Extracted rootfs size: $(du -sh {{ tmp }}/rootfs | cut -f1)"
   [ -n "$BETTERLEAKS_FILE" ] && BETTERLEAKS_OPTS="--no-banner --no-color --report-path $BETTERLEAKS_FILE --report-format sarif"
   betterleaks dir {{ tmp }}/rootfs --validation false --exit-code 0 $BETTERLEAKS_OPTS
   grype dir:{{ tmp }}/rootfs
