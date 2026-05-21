@@ -32,6 +32,7 @@ build target="":
   else
     cargo auditable build --locked
   fi
+  if [ -n "$RUSTC_WRAPPER" ]; then sccache --show-stats || true; fi
 
 # requires 1.45 [arg('target', pattern='(release)?')]
 test target="":
@@ -41,6 +42,7 @@ test target="":
   else
     cargo test --locked
   fi
+  if [ -n "$RUSTC_WRAPPER" ]; then sccache --show-stats || true; fi
 
 clean:
   cargo clean
