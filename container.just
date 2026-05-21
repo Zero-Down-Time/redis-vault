@@ -16,13 +16,13 @@ scan tmp="." image=git_repo_name:
   set -eo pipefail
   echo "Extracting rootfs of {{ image }}:{{ git_tag }}-{{ arch }} ..."
   _cid=$(podman create {{ image }}:{{ git_tag }}-{{ arch }})
-  trap "podman rm $_cid > /dev/null" EXIT
+  trap 'podman rm "$_cid" > /dev/null; rm -rf "{{ tmp }}/rootfs"' EXIT
+  rm -rf {{ tmp }}/rootfs
   mkdir -p {{ tmp }}/rootfs
   podman export $_cid | tar xf - -C {{ tmp }}/rootfs
   [ -n "$BETTERLEAKS_FILE" ] && BETTERLEAKS_OPTS="--no-banner --no-color --report-path $BETTERLEAKS_FILE --report-format sarif"
   betterleaks dir {{ tmp }}/rootfs --validation false --exit-code 0 $BETTERLEAKS_OPTS
   grype dir:{{ tmp }}/rootfs
-  rm -rf {{ tmp }}/rootfs
 
 # Log into AWS ECR (public or private). Region inferred from the registry URL for private.
 ecr-login registry:
