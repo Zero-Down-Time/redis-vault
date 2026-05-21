@@ -90,7 +90,9 @@ def call(Map config = [:]) {
       post {
         cleanup {
           script { container.cleanBuilder(config) }
-          sh "rm -rf ${TMP_DIR}"
+          dir(config.workDir ?: '.') {
+            sh "rm -rf ${TMP_DIR}"
+          }
         }
       }
     }
