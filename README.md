@@ -11,7 +11,7 @@ Various toolchain bits and pieces shared between projects — a shared CI/CD too
 - **Vulnerability Scanning** — Grype integration with configurable severity thresholds and JSON reporting
 - **Semantic Versioning** — Automatic version computation from git tags with branch suffix support
 - **Build Protection** — PR safety mechanism that overwrites build config files from the target branch
-- **Builder Containers** — Optional isolated build environments (e.g. Rust toolchain with sccache, cargo-deny, cargo-auditable)
+- **Builder Containers** — Optional isolated build environments (e.g. Rust toolchain with sccache, cargo-deny, cargo-auditable). One container is reused across all pipeline stages.
 - **GitOps Writeback** — Post-build promotion: commit image tag/digest updates to a Gitea-hosted manifests repo (direct push or PR-gated) so ArgoCD/Flux sync the change
 
 ## Quickstart
@@ -108,6 +108,8 @@ Common Makefile include providing standardized build targets:
 | `updateGitops.groovy` | GitOps writeback wrapper: commits yq-path updates to a Gitea manifests repo (`push` or `pr` mode). Auto-picks `sshagent` vs. `gitUsernamePassword` from the repo URL scheme. See `examples/Jenkinsfile.gitops-{push,pr}.groovy`. |
 
 **Pipeline stages:** Prepare → Lint → Build → Test → Scan → Push → Cleanup
+
+`justContainer` declares a `FORCE_BUILD` boolean build parameter (default off). Tick it in "Build with Parameters" to bypass the `buildOnly` skip gate for a one-off rebuild without editing the Jenkinsfile. (The checkbox appears from the second build onward — Jenkins registers parameters retroactively.)
 
 ### Utilities
 
