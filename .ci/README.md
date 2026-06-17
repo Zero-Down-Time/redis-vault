@@ -4,15 +4,16 @@ Various toolchain bits and pieces shared between projects — a shared CI/CD too
 
 ## Features
 
-- **Container Build Orchestration** — Podman-based rootless container builds with multi-architecture support (amd64, arm64)
-- **Jenkins Shared Libraries** — Reusable pipeline templates for Just and Make-based projects
+- **Container Build Orchestration** — Podman/Buildah rootless container builds with multi-architecture support (amd64, arm64) and a multi-arch manifest
+- **Jenkins Shared Libraries** — Reusable, composable per-stage pipeline templates for Just-based projects
 - **Gitea SCM Integration** — Native change detection via API for PR and commit changesets
-- **AWS ECR Public** — Registry login, push, manifest management, and automated image lifecycle cleanup
-- **Vulnerability Scanning** — Grype integration with configurable severity thresholds and JSON reporting
+- **AWS ECR (public or private)** — Registry login, push, manifest management, and automated image lifecycle cleanup; public vs private auto-detected from the registry URL
+- **Security Scanning** — Grype vulnerability scanning + betterleaks secret detection (source and image), with configurable severity thresholds and SARIF/JSON reporting surfaced via `recordIssues`
 - **Semantic Versioning** — Automatic version computation from git tags with branch suffix support
 - **Build Protection** — PR safety mechanism that overwrites build config files from the target branch
 - **Builder Containers** — Optional isolated build environments (e.g. Rust toolchain with sccache, cargo-deny, cargo-auditable). One container is reused across all pipeline stages.
 - **GitOps Writeback** — Post-build promotion: commit image tag/digest updates to a Gitea-hosted manifests repo (direct push or PR-gated) so ArgoCD/Flux sync the change
+- **Build Notifications** — Optional build-lifecycle messages (start / success / failure / aborted) via an apprise-api sidecar, fanning out to Slack / Matrix / Mattermost / Teams
 
 ## Quickstart
 
@@ -24,7 +25,7 @@ git subtree add --prefix .ci https://git.zero-downtime.net/ZeroDownTime/ci-tools
 
 ### 2. Configure your project
 
-**Using Just** (recommended) — Import the relevant `.just` modules in your `justfile`:
+Import the relevant `.just` modules in your `justfile`:
 
 ```just
 import '.ci/container.just'
@@ -32,33 +33,18 @@ import '.ci/rust.just'
 import '.ci/git.just'
 ```
 
-**Using Make** (deprecated — support will be removed midterm) — Create a top-level `Makefile`:
-
-```makefile
-REGISTRY := public.ecr.aws/<alias>             # or 1234567890.dkr.ecr.<region>.amazonaws.com
-IMAGE := <image_name>
-
-include .ci/podman.mk
-```
-
 ### 3. Integrate with Jenkins
 
-Add a `Jenkinsfile` using the shared libraries:
+Add a `Jenkinsfile` using the shared library:
 
 ```groovy
 @Library('ci-tools-lib') _
 
-// Just-based projects (recommended)
 justContainer(
   imageName:   'my-app',
   registry:    'public.ecr.aws/<alias>',  // or '<account>.dkr.ecr.<region>.amazonaws.com'
   buildOnly:   ['src/.*', '.justfile'],
   needBuilder: true,
-)
-
-// Or Make-based projects (deprecated)
-buildPodman(
-  buildOnly: ['src/.*', 'Cargo.*'],
 )
 ```
 
@@ -68,42 +54,28 @@ buildPodman(
 
 ### Just — `.just` modules (recommended)
 
+All build logic lives in these modules so a developer reproduces full CI behaviour locally by running the same `just` recipes Jenkins runs.
+
 | Module            | Key Recipes                                              |
 |-------------------|----------------------------------------------------------|
-| `container.just`  | `build`, `scan`, `push`, `ecr-login`, `create-repo`, `clean`, manifest management. Public and private AWS ECR auto-detected; override default via `REGISTRY` env var. |
-| `rust.just`       | `prepare`, `lint` (clippy + cargo-deny), `build`, `test`, version bumping |
-| `git.just`        | Version computation from tags, `tag-push`, legacy tag cleanup |
-| `builder.just`    | Builder container creation and execution via Buildah      |
-| `common.just`     | `scan-src` source secret scan; imported by language modules |
+| `container.just`  | `build`, `scan` (Grype + betterleaks), `push` (multi-arch manifest), `ecr-login`, `create-repo`, `rm-remote-untagged`, `clean`. Registry-touching recipes take the registry as their first positional arg; public vs private AWS ECR auto-detected from the URL. No default registry — every consumer declares it. |
+| `rust.just`       | `prepare` (`cargo fetch --locked`), `lint` (clippy + cargo-deny), `build` (cargo auditable), `test`, `update-lock`, `cut-release`. Opt into an Alpine musl target with `CARGO_BUILD_MUSL`. |
+| `python.just`     | uv-based: `prepare` (`uv sync --locked`), `lint` (flake8), `build` (`uv build`), `test` (pytest), `upload` (`uv publish`) |
+| `git.just`        | Version computation from tags (`git describe`, `$TAG_MATCH`-aware), branch-suffixed `tag`, `arch` (`$ARCH`, default amd64), `cleanup-tags`, `ci-pull-upstream` |
+| `builder.just`    | `update-builder` (build toolchain image), `use-builder <target>` (run a target inside the reused toolchain container; mounts repo root + sccache cache for Rust), `clean-builder` |
+| `common.just`     | `scan-src` source secret scan; imported by the language modules |
 | `gitops.just`     | `update`. Edits image tags / yq paths in a manifests repo, commits, pushes (with rebase-retry). Commit message comes from `$GITOPS_COMMIT_MESSAGE`. PR opening lives in `gitea.groovy` (`gitea.openPullRequest`). Updates spec is a JSON file so push-mode promotions reproduce locally. |
 
-### Make — `podman.mk` (deprecated — support will be removed midterm)
+### Jenkins — Shared Library (`vars/`)
 
-Common Makefile include providing standardized build targets:
-
-| Target                | Description                          |
-|-----------------------|--------------------------------------|
-| `make help`           | Show available targets               |
-| `make prepare`        | Custom pre-build preparation         |
-| `make fmt`            | Auto-format source code              |
-| `make lint`           | Lint source code                     |
-| `make build`          | Build container image                |
-| `make test`           | Test built artifacts                 |
-| `make scan`           | Scan image with Grype                |
-| `make push`           | Push image to registry               |
-| `make ecr-login`      | Login to AWS ECR                     |
-| `make rm-remote-untagged` | Cleanup untagged/dev images     |
-| `make create-repo`    | Create AWS ECR (public or private) repository |
-| `make clean`          | Clean up build artifacts             |
-| `make ci-pull-upstream` | Pull latest `.ci` subtree          |
-
-### Jenkins — Shared Libraries (`vars/`)
+Thin glue only — each helper wraps Jenkins primitives around a `just` invocation; the real logic stays in the `.just` modules.
 
 | Library                  | Purpose                                              |
 |--------------------------|------------------------------------------------------|
-| `justContainer.groovy`   | Full pipeline for Just-based container projects       |
-| `buildPodman.groovy`     | Full pipeline for Make-based container projects (deprecated) |
-| `gitea.groovy`           | Gitea API integration for change detection            |
+| `justContainer.groovy`   | Entry point — the declarative pipeline composing the per-stage helpers |
+| `container.groovy`       | Per-stage helpers (`changeset`, `prepare`, `lint`, `build`, `test`, `scan`, `push`, `clean`, `cleanBuilder`) invoked by `justContainer` |
+| `gitea.groovy`           | Gitea API integration for change detection and PR open/reuse |
+| `notify.groovy`          | Optional build-lifecycle notifications via an apprise-api sidecar (see [Build notifications](#build-notifications)) |
 | `protectBuildFiles.groovy` | Overwrites CI files from target branch during PR builds |
 | `updateGitops.groovy` | GitOps writeback wrapper: commits yq-path updates to a Gitea manifests repo (`push` or `pr` mode). Auto-picks `sshagent` vs. `gitUsernamePassword` from the repo URL scheme. See `examples/Jenkinsfile.gitops-{push,pr}.groovy`. |
 
@@ -117,7 +89,8 @@ Common Makefile include providing standardized build targets:
 
 - **`ecr_lifecycle.py`** — Python utility (requires `boto3`) to manage ECR image lifecycle for public *and* private ECR: removes untagged images, prunes old dev-tagged images, keeps a configurable number of recent tagged images. Detects public vs private from the `--registry` URL.
 - **`utils.sh`** — Bash helpers for semantic version bumping (`bumpVersion`) and git commit/tag/push automation (`addCommitTagPush`).
-- **`Dockerfile.rust`** — Multi-stage Rust builder image (Alpine 3.23) with cargo, clippy, sccache, cargo-auditable, cargo-deny, and just.
+- **`Dockerfile.rust`** — Rust toolchain builder image (Alpine 3.24) with cargo, clippy, sccache (`RUSTC_WRAPPER`), cargo-auditable, cargo-deny, and just. Used by the `use-builder` flow.
+- **`Dockerfile.python`** — Python toolchain builder image (Alpine 3.24, uv-based) for the `use-builder` flow.
 
 ## Monorepo layout
 
@@ -173,7 +146,7 @@ justContainer(
     // Alpine builder): env: ['CARGO_BUILD_MUSL=true', 'ARCH=arm64'].
     // env: ['CARGO_BUILD_MUSL=true'],
     // Optional build notifications via the apprise-api sidecar (see below).
-    // notify: [key: 'team-platform', events: ['start', 'success', 'failure']],
+    // notify: [key: 'team-platform'],   // events default to start/success/failure/aborted
 )
 ```
 
@@ -181,7 +154,7 @@ justContainer(
 
 ## Build notifications
 
-Optional build-lifecycle notifications (start / success / failure) are sent through an [apprise-api](https://github.com/caronc/apprise-api) sidecar running next to the Jenkins controller. `justContainer` POSTs a single JSON event; apprise-api fans out to the configured chat targets (Slack, Matrix, Mattermost, Teams, ...). Off unless `notify` is set — existing consumers are unaffected.
+Optional build-lifecycle notifications (start / success / failure / aborted) are sent through an [apprise-api](https://github.com/caronc/apprise-api) sidecar running next to the Jenkins controller. `justContainer` POSTs a single JSON event; apprise-api fans out to the configured chat targets (Slack, Matrix, Mattermost, Teams, ...). Off unless `notify` is set — existing consumers are unaffected.
 
 Destinations and their secrets live in apprise-api **config keys**, never in this repo: register e.g. `slack://…`/`matrix://…` URLs under a key (`team-platform`) on the sidecar, then reference the key from the Jenkinsfile. If `key` is omitted (and no `urls` are given), the module falls back to apprise-api's conventional `default` key — so a single shared `default` config requires no per-Jenkinsfile `key` at all.
 
@@ -191,7 +164,7 @@ justContainer(
     notify: [
         // key:        'team-platform',                // apprise-api config key (defaults to 'default' when omitted)
         // urls:       ['slack://T/B/xxx'],             // stateless alternative (destinations in-repo)
-        events:        ['start', 'success', 'failure', 'aborted'], // default ['success', 'failure']
+        // events:     ['start', 'success', 'failure', 'aborted'],  // this is the default set
         tag:           'ci',                            // optional apprise tag filter
         // url:        'http://apprise-api:8000',       // optional; defaults to env.APPRISE_API_URL
         // credentialsId: 'apprise-token',              // optional Secret Text -> 'Authorization: Bearer <token>'
@@ -203,10 +176,11 @@ justContainer(
 
 - **Endpoint** is shared infra, so set `APPRISE_API_URL` once on the controller (global env); `notify.url` overrides per-job.
 - **Destinations** resolve in this order: an explicit `key` → `/notify/<key>`; else inline `urls` → stateless `/notify`; else the `default` key → `/notify/default`. Pre-register that `default` config on the sidecar to drive notifications from `notify: [events: [...]]` alone.
-- **Events** map from the build result: `SUCCESS→success`, `FAILURE→failure`, `UNSTABLE→unstable`, `ABORTED→aborted`, plus `start`. Only listed events fire — to be notified when a build is aborted (incl. via the Jenkins UI), add `'aborted'` to `events`; it is not in the default set. The apprise notification `type` (`info`/`success`/`warning`/`failure`) drives per-platform colour/emoji automatically.
+- **Events** map from the build result: `SUCCESS→success`, `FAILURE→failure`, `UNSTABLE→unstable`, `ABORTED`/`NOT_BUILT→aborted`, plus `start`. All five fire by default (`['start','success','failure','aborted']`); set `events` to narrow the set. The apprise notification `type` (`info`/`success`/`warning`/`failure`) drives per-platform colour automatically.
 - **Aborted builds** fire from `post { always }` like any other end event. A UI abort interrupts the in-flight notification step once, so the send is retried a single time to survive the abort — a hard/double-kill that tears the executor down may still skip it.
-- **SKIP builds** (no source changes) are silent unless `notifySkipped: true`.
-- **Messages** default to a one-line summary: a PR/branch ref (PR builds link to `CHANGE_URL`; branch builds link to the gitea branch page), the short commit SHA (linked to the gitea commit page), and a linked Jenkins `build <number>` followed by the trigger cause (`triggered by user …`) on start events, or the duration (`took …`) on end events. All links are derived in-process from `GIT_URL` — no remote call. Override any event's body with a closure under `messages` (resolved lazily so `env`/`currentBuild` are populated).
+- **SKIP builds** (no source changes) are silent unless `notifySkipped: true` (governs start and end symmetrically).
+- **Title** reads like a sentence with a leading status emoji and, on end events, a build-status transition vs. the previous run — e.g. `🚀 Jenkins build of api-users/main started`, `✅ Jenkins build of api-users/main finished successfully (Fixed)`, `❌ … failed (Still failing)`.
+- **Body** defaults to a one-line summary: a PR/branch ref (PR builds link to `CHANGE_URL`; branch builds link to the gitea branch page), the short commit SHA (linked to the gitea commit page), and a linked Jenkins `build <number>` followed by the trigger cause (`triggered by user …`) on start events, or the duration (`took …`) on end events. All git links are derived in-process from `GIT_URL` (via `gitea.parseGitUrl`) — no remote call. Override any event's body with a closure under `messages` (resolved lazily so `env`/`currentBuild` are populated).
 - A notification problem (sidecar down, bad key) is logged and **never fails the build**.
 
 ## GitOps writeback
