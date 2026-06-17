@@ -107,7 +107,9 @@ Common Makefile include providing standardized build targets:
 | `protectBuildFiles.groovy` | Overwrites CI files from target branch during PR builds |
 | `updateGitops.groovy` | GitOps writeback wrapper: commits yq-path updates to a Gitea manifests repo (`push` or `pr` mode). Auto-picks `sshagent` vs. `gitUsernamePassword` from the repo URL scheme. See `examples/Jenkinsfile.gitops-{push,pr}.groovy`. |
 
-**Pipeline stages:** Prepare → Lint → Build → Test → Scan → Push → Cleanup
+**Pipeline stages:** Changeset → Prepare → Lint → Build → Test → Scan → Push → Cleanup
+
+`Changeset` is a minimal first stage that runs the gitea change detection and sets the `SKIP` flag (no changed file matched `buildOnly`, and no force build) — every later stage, `Prepare` included, is gated on it, so the skip decision is made before any prep work runs.
 
 `justContainer` declares a `FORCE_BUILD` boolean build parameter (default off). Tick it in "Build with Parameters" to bypass the `buildOnly` skip gate for a one-off rebuild without editing the Jenkinsfile. (The checkbox appears from the second build onward — Jenkins registers parameters retroactively.)
 
@@ -138,6 +140,15 @@ repo/
 # Per-service tag prefix so `git describe` only sees this service's releases
 export TAG_MATCH := "api-users/v*.*.*"
 
+# Optional (Rust only, needs `needBuilder`): build with an explicit Alpine musl
+# target inside the builder, so artifacts land in `target/<triple>/<profile>/`.
+# Update this service's Dockerfile `COPY` path to match. The triple follows ARCH
+# (x86_64- / aarch64-alpine-linux-musl) and is injected by `use-builder` *inside
+# the container only* — plain `just build` on a non-Alpine dev host is unaffected.
+# Do NOT `export CARGO_BUILD_TARGET` here: it would also hit host cargo and break
+# local `just build` off Alpine.
+# export CARGO_BUILD_MUSL := "true"
+
 # Toolchain — flat-imported so `just lint`, `just prepare`, `just scan-src`,
 # `just use-builder lint` etc. work. Pulls common.just, builder.just, git.just.
 import '../../.ci/python.just'
@@ -157,10 +168,46 @@ justContainer(
     registry:    '1234567890.dkr.ecr.us-east-1.amazonaws.com',  // or public.ecr.aws/<alias>
     buildOnly:   ['services/api-users/.*', '\\.ci/.*'],
     needBuilder: true,
+    // Extra env (withEnv format) applied to the Prepare/Lint/Build/Test stages.
+    // Static values only. Host-safe Rust opt-ins (read by use-builder inside the
+    // Alpine builder): env: ['CARGO_BUILD_MUSL=true', 'ARCH=arm64'].
+    // env: ['CARGO_BUILD_MUSL=true'],
+    // Optional build notifications via the apprise-api sidecar (see below).
+    // notify: [key: 'team-platform', events: ['start', 'success', 'failure']],
 )
 ```
 
 `protect` defaults to `["${workDir}/.justfile", "${workDir}/Jenkinsfile", '.ci/**']`, so service-scoped build files are restored from the target branch on PR builds without needing to override it. Tag releases as `api-users/v1.2.3` and configure the Jenkins multibranch project's *Script Path* to `services/*/Jenkinsfile`.
+
+## Build notifications
+
+Optional build-lifecycle notifications (start / success / failure) are sent through an [apprise-api](https://github.com/caronc/apprise-api) sidecar running next to the Jenkins controller. `justContainer` POSTs a single JSON event; apprise-api fans out to the configured chat targets (Slack, Matrix, Mattermost, Teams, ...). Off unless `notify` is set — existing consumers are unaffected.
+
+Destinations and their secrets live in apprise-api **config keys**, never in this repo: register e.g. `slack://…`/`matrix://…` URLs under a key (`team-platform`) on the sidecar, then reference the key from the Jenkinsfile. If `key` is omitted (and no `urls` are given), the module falls back to apprise-api's conventional `default` key — so a single shared `default` config requires no per-Jenkinsfile `key` at all.
+
+```groovy
+justContainer(
+    // ...
+    notify: [
+        // key:        'team-platform',                // apprise-api config key (defaults to 'default' when omitted)
+        // urls:       ['slack://T/B/xxx'],             // stateless alternative (destinations in-repo)
+        events:        ['start', 'success', 'failure', 'aborted'], // default ['success', 'failure']
+        tag:           'ci',                            // optional apprise tag filter
+        // url:        'http://apprise-api:8000',       // optional; defaults to env.APPRISE_API_URL
+        // credentialsId: 'apprise-token',              // optional Secret Text -> 'Authorization: Bearer <token>'
+        // notifySkipped: true,                         // also notify SKIP (no-change) builds
+        // messages:   [failure: { "build broke: ${env.BUILD_URL}" }],  // optional per-event body closures
+    ],
+)
+```
+
+- **Endpoint** is shared infra, so set `APPRISE_API_URL` once on the controller (global env); `notify.url` overrides per-job.
+- **Destinations** resolve in this order: an explicit `key` → `/notify/<key>`; else inline `urls` → stateless `/notify`; else the `default` key → `/notify/default`. Pre-register that `default` config on the sidecar to drive notifications from `notify: [events: [...]]` alone.
+- **Events** map from the build result: `SUCCESS→success`, `FAILURE→failure`, `UNSTABLE→unstable`, `ABORTED→aborted`, plus `start`. Only listed events fire — to be notified when a build is aborted (incl. via the Jenkins UI), add `'aborted'` to `events`; it is not in the default set. The apprise notification `type` (`info`/`success`/`warning`/`failure`) drives per-platform colour/emoji automatically.
+- **Aborted builds** fire from `post { always }` like any other end event. A UI abort interrupts the in-flight notification step once, so the send is retried a single time to survive the abort — a hard/double-kill that tears the executor down may still skip it.
+- **SKIP builds** (no source changes) are silent unless `notifySkipped: true`.
+- **Messages** default to a one-line summary: a PR/branch ref (PR builds link to `CHANGE_URL`; branch builds link to the gitea branch page), the short commit SHA (linked to the gitea commit page), and a linked Jenkins `build <number>` followed by the trigger cause (`triggered by user …`) on start events, or the duration (`took …`) on end events. All links are derived in-process from `GIT_URL` — no remote call. Override any event's body with a closure under `messages` (resolved lazily so `env`/`currentBuild` are populated).
+- A notification problem (sidecar down, bad key) is logged and **never fails the build**.
 
 ## GitOps writeback
 

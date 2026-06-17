@@ -1,37 +1,47 @@
 // Container build stages — composed by justContainer.groovy.
 // Each method is invoked as `container.<stage>(config)`.
 
-// Prepare stage: gather changeSet, gate downstream stages on buildOnly,
-// protect build files, run `just prepare`. Sets currentBuild.description = 'SKIP'
-// when no changed files match buildOnly (and forceBuild is not set).
-def prepare(Map config = [:]) {
-    def workDir     = config.workDir     ?: '.'
-    def tmpDir      = config.tmpDir      ?: '_tmp'
-    def debug       = config.debug       ?: false
-    def needBuilder = config.needBuilder ?: false
-    def buildOnly   = config.buildOnly   ?: ['.*']
-    def forceBuild  = config.forceBuild != null ? config.forceBuild : (config.force_build ?: false)
-    def justfilePath    = workDir == '.' ? '.justfile' : "${workDir}/.justfile"
-    def jenkinsfilePath = workDir == '.' ? 'Jenkinsfile' : "${workDir}/Jenkinsfile"
-    def protect     = config.protect     ?: [justfilePath, jenkinsfilePath, '.ci/**']
+// Changeset stage: gitea changeset + buildOnly/forceBuild gate. Sets
+// currentBuild.description = 'SKIP' (which gates every downstream stage,
+// including Prepare) when no changed file matches buildOnly and forceBuild is
+// not set. Minimal by design — the heavy prep work lives in prepare(), so the
+// SKIP decision is made before any of it runs.
+def changeset(Map config = [:]) {
+    def debug      = config.debug      ?: false
+    def buildOnly  = config.buildOnly  ?: ['.*']
+    def forceBuild = config.forceBuild != null ? config.forceBuild : (config.force_build ?: false)
 
     def files = gitea.getChangeset(debug: debug)
 
     if (!forceBuild && !gitea.pathsChanged(files: files, patterns: buildOnly, debug: debug)) {
         echo "No changed files matching any of: ${buildOnly.join(', ')}. Skipping downstream stages."
         currentBuild.description = 'SKIP'
-        return
     }
+}
+
+// Prepare stage: protect build files, create tmpDir, build the toolchain image
+// (if needBuilder) and run the optional `just prepare`. Gated on the SKIP flag
+// set by changeset(), so it only runs for real builds.
+def prepare(Map config = [:]) {
+    def workDir     = config.workDir     ?: '.'
+    def tmpDir      = config.tmpDir      ?: '_tmp'
+    def needBuilder = config.needBuilder ?: false
+    def justfilePath    = workDir == '.' ? '.justfile' : "${workDir}/.justfile"
+    def jenkinsfilePath = workDir == '.' ? 'Jenkinsfile' : "${workDir}/Jenkinsfile"
+    def protect     = config.protect     ?: [justfilePath, jenkinsfilePath, '.ci/**']
+    def buildEnv    = config.env         ?: []
 
     protectBuildFiles(protect)
 
     dir(workDir) {
-        sh "mkdir -p '${tmpDir}'"
-        if (needBuilder) {
-            sh "just update-builder"
-            sh "if just --summary | grep -q prepare; then just use-builder prepare; fi"
-        } else {
-            sh "if just --summary | grep -q prepare; then just prepare; fi"
+        withEnv(buildEnv) {
+            sh "mkdir -p '${tmpDir}'"
+            if (needBuilder) {
+                sh "just update-builder"
+                sh "if just --summary | grep -q prepare; then just use-builder prepare; fi"
+            } else {
+                sh "if just --summary | grep -q prepare; then just prepare; fi"
+            }
         }
     }
 }
@@ -42,6 +52,7 @@ def lint(Map config = [:]) {
     def tmpDir      = config.tmpDir      ?: '_tmp'
     def needBuilder = config.needBuilder ?: false
     def scanFail    = config.scanFail != null ? config.scanFail : true
+    def buildEnv    = config.env         ?: []
 
     dir(workDir) {
         withEnv(["BETTERLEAKS_SRC_FILE=${tmpDir}/betterleaks-src-report.json"]) {
@@ -60,12 +71,14 @@ def lint(Map config = [:]) {
             ]
         )
 
-        if (needBuilder) {
-            sh "if just --summary | grep -q fmt; then just use-builder fmt release; fi"
-            sh "if just --summary | grep -q lint; then just use-builder lint release; fi"
-        } else {
-            sh "if just --summary | grep -q fmt; then just fmt release; fi"
-            sh "if just --summary | grep -q lint; then just lint release; fi"
+        withEnv(buildEnv) {
+            if (needBuilder) {
+                sh "if just --summary | grep -q fmt; then just use-builder fmt release; fi"
+                sh "if just --summary | grep -q lint; then just use-builder lint release; fi"
+            } else {
+                sh "if just --summary | grep -q fmt; then just fmt release; fi"
+                sh "if just --summary | grep -q lint; then just lint release; fi"
+            }
         }
     }
 }
@@ -76,16 +89,19 @@ def build(Map config = [:]) {
     def workDir     = config.workDir     ?: '.'
     def imageName   = config.imageName   ?: ''
     def needBuilder = config.needBuilder ?: false
+    def buildEnv    = config.env         ?: []
 
     def imageArg = imageName ? " '${imageName}'" : ''
     String tag
 
     dir(workDir) {
-        if (needBuilder) {
-            sh "just use-builder build release"
+        withEnv(buildEnv) {
+            if (needBuilder) {
+                sh "just use-builder build release"
+            }
+            sh "just container::build${imageArg}"
+            tag = sh(returnStdout: true, script: 'just container::_print-tag').trim()
         }
-        sh "just container::build${imageArg}"
-        tag = sh(returnStdout: true, script: 'just container::_print-tag').trim()
     }
     return tag
 }
@@ -94,12 +110,15 @@ def build(Map config = [:]) {
 def test(Map config = [:]) {
     def workDir     = config.workDir     ?: '.'
     def needBuilder = config.needBuilder ?: false
+    def buildEnv    = config.env         ?: []
 
     dir(workDir) {
-        if (needBuilder) {
-            sh "if just --summary | grep -q test; then just use-builder test release; fi"
-        } else {
-            sh "if just --summary | grep -q test; then just test release; fi"
+        withEnv(buildEnv) {
+            if (needBuilder) {
+                sh "if just --summary | grep -q test; then just use-builder test release; fi"
+            } else {
+                sh "if just --summary | grep -q test; then just test release; fi"
+            }
         }
     }
 }

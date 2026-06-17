@@ -27,7 +27,9 @@ _addCommitTagPush version +files:
 
 
 ### OS
-arch := "amd64"
+# Build arch, overridable from the environment so Jenkins (or a per-arch matrix)
+# can drive a single source of truth for both `--platform` and derived values.
+arch := env_var_or_default("ARCH", "amd64")
 all_archs := "amd64 arm64"
 
 # Validate architecture (defaults to amd64)

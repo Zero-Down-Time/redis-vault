@@ -31,6 +31,18 @@ use-builder +target:
     sccache_cache="${SCCACHE_DIR:-$HOME/.cache/sccache}"
     mkdir -p "$sccache_cache"
     mounts+=(-v "$sccache_cache:/root/.cache/sccache")
+    # Pin the Alpine musl target triple *inside the builder only*, so artifacts
+    # land in target/<triple>/ without affecting cargo on a non-Alpine dev host
+    # (plain `just build`). Opt in per-project with `export CARGO_BUILD_MUSL := "true"`
+    # (or env CARGO_BUILD_MUSL=true); the triple follows ARCH. An explicit
+    # CARGO_BUILD_TARGET in the env takes precedence.
+    if [ -z "${CARGO_BUILD_TARGET:-}" ] && [ -n "${CARGO_BUILD_MUSL:-}" ]; then
+      case "${ARCH:-amd64}" in
+        arm64) CARGO_BUILD_TARGET="aarch64-alpine-linux-musl" ;;
+        *)     CARGO_BUILD_TARGET="x86_64-alpine-linux-musl" ;;
+      esac
+    fi
+    [ -n "${CARGO_BUILD_TARGET:-}" ] && mounts+=(-e "CARGO_BUILD_TARGET=$CARGO_BUILD_TARGET")
   fi
   buildah config --workingdir "/app/$rel" $builder
   buildah run "${mounts[@]}" $builder -- just {{ target }}
