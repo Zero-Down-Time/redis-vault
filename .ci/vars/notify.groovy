@@ -17,8 +17,8 @@
  *   justContainer(
  *     ...,
  *     notify: [
- *       key:    'team-platform',                  // apprise-api config key (recommended)
- *       events: ['start', 'success', 'failure'],  // default ['success', 'failure']
+ *       key:    'team-platform',                            // apprise-api config key (recommended)
+ *       events: ['start', 'success', 'failure', 'aborted'], // this is the default set
  *     ],
  *   )
  *
@@ -27,30 +27,38 @@
  * notify.url.
  */
 
-// Fire a "build started" event. Safe to call unconditionally
 def start(Map config = [:]) {
-    _emit(config, 'start', 'info')
+    _emit(config, 'start')
 }
 
-// Fire a "build ended" event. Derives the event + apprise type from
-// currentBuild.currentResult, so this is safe to call unconditionally from
-// post { always { } } — it self-filters by result, events and the SKIP flag.
+// Safe to call unconditionally from post { always { } }: derives the event from
+// currentBuild.currentResult and self-filters by events and the SKIP flag.
 def end(Map config = [:]) {
-    def result = currentBuild.currentResult ?: 'SUCCESS'
-    def map = [
-        SUCCESS:   [event: 'success',  type: 'success'],
-        FAILURE:   [event: 'failure',  type: 'failure'],
-        UNSTABLE:  [event: 'unstable', type: 'warning'],
-        ABORTED:   [event: 'aborted',  type: 'warning'],
-        NOT_BUILT: [event: 'aborted',  type: 'warning'],
-    ][result] ?: [event: 'failure', type: 'failure']
-
-    _emit(config, map.event, map.type)
+    def event = [
+        SUCCESS:   'success',
+        FAILURE:   'failure',
+        UNSTABLE:  'unstable',
+        ABORTED:   'aborted',
+        NOT_BUILT: 'aborted',
+    ][currentBuild.currentResult] ?: 'failure'
+    _emit(config, event)
 }
 
-// Resolve config, apply the event/SKIP filters, build the message and send.
-// Never throws: a notification problem must not fail the build.
-def _emit(Map config, String event, String type) {
+// Per-event presentation + apprise type — the single source of truth consumed by
+// _title (phrase/emoji) and _payload (type).
+def _meta(String event) {
+    return [
+        start:    [phrase: 'started',               emoji: '🚀', type: 'info'],
+        success:  [phrase: 'finished successfully', emoji: '✅', type: 'success'],
+        failure:  [phrase: 'failed',                emoji: '❌', type: 'failure'],
+        unstable: [phrase: 'finished unstable',     emoji: '⚠️', type: 'warning'],
+        aborted:  [phrase: 'was aborted',           emoji: '⏹️', type: 'warning'],
+    ][event] ?: [phrase: event, emoji: null, type: 'failure']
+}
+
+// Apply the event/SKIP filters, then send. Never throws: a notification problem
+// must not fail the build.
+def _emit(Map config, String event) {
     try {
         def n = config.notify
         if (!(n instanceof Map)) return
@@ -58,8 +66,7 @@ def _emit(Map config, String event, String type) {
         def events = n.events ?: ['start', 'success', 'failure', 'aborted']
         if (!events.contains(event)) return
 
-        def skipped = currentBuild.description == 'SKIP'
-        if (skipped && !(n.notifySkipped ?: false)) return
+        if (currentBuild.description == 'SKIP' && !(n.notifySkipped ?: false)) return
 
         def apiUrl = (n.url ?: env.APPRISE_API_URL)?.toString()?.replaceAll('/$', '')
         if (!apiUrl) {
@@ -67,27 +74,30 @@ def _emit(Map config, String event, String type) {
             return
         }
 
-        def debug = n.debug ?: false
-        def payload = [
-            title: _title(event),
-            body:  _body(n, event),
-            type:  type,
-            format: 'markdown',
-        ]
-        if (n.tag)  payload.tag  = n.tag
-        if (n.urls) payload.urls = n.urls instanceof List ? n.urls.join(',') : n.urls
-
-        // Keyed (stateful) mode resolves destinations server-side from the apprise-api
-        // config stored under `key`; absent an explicit key, fall back to apprise-api's
-        // conventional 'default' key. A consumer that sets `urls` instead opts into
-        // stateless mode (`/notify`, inline urls — no stored config).
-        def endpoint = n.key  ? "${apiUrl}/notify/${n.key}"
-                     : n.urls ? "${apiUrl}/notify"
-                     :          "${apiUrl}/notify/default"
-        _dispatch(n, endpoint, payload, debug)
+        _dispatch(n, _endpoint(n, apiUrl), _payload(n, event), n.debug ?: false)
     } catch (err) {
         echo "notify: ${event} notification failed (ignored): ${err}"
     }
+}
+
+def _payload(Map n, String event) {
+    def payload = [
+        title:  _title(event),
+        body:   _body(n, event),
+        type:   _meta(event).type,
+        format: 'markdown',
+    ]
+    if (n.tag)  payload.tag  = n.tag
+    if (n.urls) payload.urls = n.urls instanceof List ? n.urls.join(',') : n.urls
+    return payload
+}
+
+// key → stateful config stored server-side under that key; else inline urls →
+// stateless /notify; else apprise-api's conventional 'default' key.
+def _endpoint(Map n, String apiUrl) {
+    if (n.key)  return "${apiUrl}/notify/${n.key}"
+    if (n.urls) return "${apiUrl}/notify"
+    return "${apiUrl}/notify/default"
 }
 
 // Send once, retrying a single time on FlowInterruptedException. A build aborted
@@ -130,22 +140,14 @@ def _post(String endpoint, Map payload, List headers, Boolean debug) {
     }
 }
 
-// Default title, e.g. "Jenkins build of api-users/main finished successfully (Fixed)"
-// or "Jenkins build of api-users/main started". End events append the build-status
-// transition (vs. the previous build) when it carries signal, derived from
-// currentBuild only (no remote call). The trigger cause lives in the body.
+// e.g. "✅ Jenkins build of api-users/main finished successfully (Fixed)". End
+// events append the build-status transition; the trigger cause lives in the body.
 def _title(String event) {
-    def phrase = [
-        start:    'started',
-        success:  'finished successfully',
-        failure:  'failed',
-        unstable: 'finished unstable',
-        aborted:  'was aborted',
-    ][event] ?: event
+    def meta = _meta(event)
     def detail = (event == 'start') ? null : _transition()
-    def title = "Jenkins build of ${_project()} ${phrase}"
+    def title = "Jenkins build of ${_project()} ${meta.phrase}"
     if (detail) title += " (${detail})"
-    return title
+    return meta.emoji ? "${meta.emoji} ${title}" : title
 }
 
 // "<project>/<branch>" identifying the build. On a multibranch job JOB_BASE_NAME
@@ -162,9 +164,8 @@ def _project() {
     return full
 }
 
-// Human-readable trigger cause for this run (e.g. "Started by user Stefan",
-// "Started by timer", "Started by an SCM change"), from currentBuild.buildCauses.
-// Returns null if unavailable. Guarded so it can never sink the notification.
+// Human-readable trigger cause (e.g. "Started by user Stefan"), or null. Guarded
+// so it can never sink the notification.
 def _triggerCause() {
     try {
         def causes = currentBuild.buildCauses
@@ -174,9 +175,8 @@ def _triggerCause() {
     }
 }
 
-// Build-status transition relative to the previous run, from currentBuild only
-// (no remote call): null for a steady-green build (no extra signal), else a
-// short label — "Fixed", "Broken", "Still failing", "First build", etc.
+// Build-status transition vs. the previous run: null for steady green (no extra
+// signal), else a short label — "Fixed", "Broken", "Still failing", ...
 def _transition() {
     def prev = currentBuild.previousBuild?.result
     def cur  = currentBuild.currentResult ?: 'SUCCESS'
@@ -187,8 +187,8 @@ def _transition() {
     return "Now ${cur.toLowerCase()}"
 }
 
-// Default body, or a consumer-supplied closure under notify.messages[event].
-// Closures are resolved here (lazily) so env/currentBuild are populated.
+// Default body (a consumer-supplied notify.messages[event] closure/string wins).
+// Closures resolve lazily here so env/currentBuild are populated.
 def _body(Map n, String event) {
     def override = (n.messages instanceof Map) ? n.messages[event] : null
     if (override instanceof Closure) return override.call().toString()
@@ -196,25 +196,18 @@ def _body(Map n, String event) {
 
     def parts = []
     if (env.CHANGE_ID) {
-        // PR build: env.CHANGE_URL is the PR's web URL (set by the multibranch
-        // source) — no construction or remote call needed.
-        parts << (env.CHANGE_URL ? "<${env.CHANGE_URL}|PR #${env.CHANGE_ID}>" : "PR #${env.CHANGE_ID}")
+        parts << _link(env.CHANGE_URL, "PR #${env.CHANGE_ID}")
     } else {
         def branch = (env.BRANCH_NAME ?: env.GIT_BRANCH)?.replaceFirst(/^origin\//, '')
-        if (branch) {
-            def branchUrl = _branchUrl(branch)
-            parts << (branchUrl ? "<${branchUrl}|${branch}>" : branch)
-        }
+        if (branch) parts << _link(_branchUrl(branch), branch)
     }
     if (env.GIT_COMMIT) {
-        def shortSha = env.GIT_COMMIT.take(8)
-        def commitUrl = _commitUrl()
-        parts << (commitUrl ? "<${commitUrl}|${shortSha}>" : shortSha)
+        parts << _link(_commitUrl(), env.GIT_COMMIT.take(8))
     }
 
-    // Build segment: linked "build <n>". Start events append the trigger cause
-    // ("Started by " rephrased to "triggered by"); end events append the duration.
-    def buildSeg = env.BUILD_URL ? "<${env.BUILD_URL}|build ${env.BUILD_NUMBER}>" : "build ${env.BUILD_NUMBER}"
+    // Start events append the trigger cause ("Started by " rephrased to
+    // "triggered by"); end events append the duration.
+    def buildSeg = _link(env.BUILD_URL, "build ${env.BUILD_NUMBER}")
     if (event == 'start') {
         def cause = _triggerCause()?.replaceFirst(/^Started by /, '')
         if (cause) buildSeg += " triggered by ${cause}"
@@ -226,10 +219,14 @@ def _body(Map n, String event) {
     return parts.join(' · ')
 }
 
-// "${giteaUrl}/${owner}/${repo}" for the build's repo, derived in-process from
-// env.GIT_URL via gitea.parseGitUrl (no remote call). Returns null when GIT_URL
-// is absent or unparseable. Wrapped so a link-building hiccup can never sink the
-// whole notification.
+// Slack-style link, or the bare text when no url is available.
+def _link(String url, String text) {
+    return url ? "<${url}|${text}>" : text
+}
+
+// "${giteaUrl}/${owner}/${repo}", derived in-process from env.GIT_URL via
+// gitea.parseGitUrl (no remote call). Null when absent/unparseable; guarded so a
+// link-building hiccup can never sink the notification.
 def _repoBase() {
     try {
         if (!env.GIT_URL) return null
@@ -240,15 +237,11 @@ def _repoBase() {
     }
 }
 
-// Gitea web URL for the current commit; null when unavailable (caller falls back
-// to a plain short SHA).
 def _commitUrl() {
     def base = _repoBase()
     return (base && env.GIT_COMMIT) ? "${base}/commit/${env.GIT_COMMIT}" : null
 }
 
-// Gitea web URL for a branch; null when unavailable (caller falls back to plain
-// branch text).
 def _branchUrl(String branch) {
     def base = _repoBase()
     return (base && branch) ? "${base}/src/branch/${branch}" : null
