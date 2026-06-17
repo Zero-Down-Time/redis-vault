@@ -17,11 +17,22 @@ def call(Map config = [:]) {
         TMP_DIR = "_tmp"
       }
       stages {
-        stage('Prepare') {
+        stage('Changeset') {
           steps {
             script {
-              container.prepare(config + [forceBuild: (params.FORCE_BUILD == true) || (config.forceBuild ?: false)])
+              container.changeset(config + [forceBuild: (params.FORCE_BUILD == true) || (config.forceBuild ?: false)])
+              notify.start(config)
             }
+          }
+        }
+
+        stage('Prepare') {
+          when {
+            expression { currentBuild.description != 'SKIP' }
+            expression { currentBuild.currentResult != 'FAILURE' }
+          }
+          steps {
+            script { container.prepare(config) }
           }
         }
 
@@ -88,6 +99,9 @@ def call(Map config = [:]) {
       }
 
       post {
+        always {
+          script { notify.end(config) }
+        }
         cleanup {
           script { container.cleanBuilder(config) }
           dir(config.workDir ?: '.') {

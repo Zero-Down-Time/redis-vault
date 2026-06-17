@@ -26,7 +26,7 @@ scan tmp="." image=git_repo_name:
   podman export $_cid | tar xf - -C {{ tmp }}/rootfs
   echo "Extracted rootfs size: $(du -sh {{ tmp }}/rootfs | cut -f1)"
   [ -n "$BETTERLEAKS_FILE" ] && BETTERLEAKS_OPTS="--no-banner --no-color --report-path $BETTERLEAKS_FILE --report-format sarif"
-  betterleaks dir {{ tmp }}/rootfs --validation false --exit-code 0 $BETTERLEAKS_OPTS
+  betterleaks dir {{ tmp }}/rootfs --validation=false --exit-code 0 $BETTERLEAKS_OPTS
   grype dir:{{ tmp }}/rootfs
 
 # Log into AWS ECR (public or private). Region inferred from the registry URL for private.

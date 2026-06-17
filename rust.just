@@ -3,7 +3,7 @@ import 'common.just'
 import 'git.just'
 
 prepare:
-  cargo fetch
+  cargo fetch --locked
 
 # requires 1.45 [arg('target', pattern='(release)?')]
 lint target="":
@@ -43,6 +43,10 @@ test target="":
     cargo test --locked
   fi
   if [ -n "$RUSTC_WRAPPER" ]; then sccache --show-stats || true; fi
+
+# regenerate Cargo.lock using the toolchain image's cargo (run via `just use-builder update-lock`)
+update-lock:
+  cargo update -w
 
 clean:
   cargo clean
