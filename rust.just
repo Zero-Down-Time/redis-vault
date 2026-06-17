@@ -8,6 +8,7 @@ prepare:
 # requires 1.45 [arg('target', pattern='(release)?')]
 lint target="":
   #!/usr/bin/env sh
+  set -e
   if [ "{{ target }}" == "release" ]; then
     cargo clippy --workspace --locked --all-targets --release -- -D warnings
   else
@@ -18,6 +19,7 @@ lint target="":
 # requires 1.45 [arg('target', pattern='(release)?')]
 fmt target="":
   #!/usr/bin/env sh
+  set -e
   if [ "{{ target }}" == "release" ]; then
     cargo fmt --check
   else
@@ -27,6 +29,7 @@ fmt target="":
 # requires 1.45 [arg('target', pattern='(release)?')]
 build target="":
   #!/usr/bin/env sh
+  set -e
   if [ "{{ target }}" == "release" ]; then
     cargo auditable build --locked --release
   else
@@ -37,6 +40,7 @@ build target="":
 # requires 1.45 [arg('target', pattern='(release)?')]
 test target="":
   #!/usr/bin/env sh
+  set -e
   if [ "{{ target }}" == "release" ]; then
     cargo test --locked --release
   else

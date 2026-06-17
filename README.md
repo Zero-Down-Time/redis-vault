@@ -1,233 +1,279 @@
-# Redis Vault
+# ci-tools-lib
 
-A production-ready Rust application designed to run as a sidecar container alongside Redis instances, providing automated secure backups to S3 or Google Cloud Storage with configurable retention policies.
+Various toolchain bits and pieces shared between projects — a shared CI/CD toolchain library for building, testing, scanning, and publishing containerized applications using Podman, Jenkins, and AWS ECR.
 
 ## Features
 
-- **Non-intrusive backups**: Uses existing `dump.rdb` files without triggering BGSAVE
-- **Multi-cloud support**: Backs up to AWS S3 or Google Cloud Storage
-- **Role-aware backups**: Configurable to backup from masters, replicas, or both
-- **Automatic retention management**: Cleanup old backups based on count and age
-- **Kubernetes-ready**: Designed for sidecar deployment pattern
-- **Comprehensive logging**: Structured JSON logging
-- **Flexible configuration**: YAML config files or environment variables
-- **Environment variable precedence**: Env vars override config file settings
-- **Alpine-based**: Minimal Docker image (~13MB)
+- **Container Build Orchestration** — Podman/Buildah rootless container builds with multi-architecture support (amd64, arm64) and a multi-arch manifest
+- **Jenkins Shared Libraries** — Reusable, composable per-stage pipeline templates for Just-based projects
+- **Gitea SCM Integration** — Native change detection via API for PR and commit changesets
+- **AWS ECR (public or private)** — Registry login, push, manifest management, and automated image lifecycle cleanup; public vs private auto-detected from the registry URL
+- **Security Scanning** — Grype vulnerability scanning + betterleaks secret detection (source and image), with configurable severity thresholds and SARIF/JSON reporting surfaced via `recordIssues`
+- **Semantic Versioning** — Automatic version computation from git tags with branch suffix support
+- **Build Protection** — PR safety mechanism that overwrites build config files from the target branch
+- **Builder Containers** — Optional isolated build environments (e.g. Rust toolchain with sccache, cargo-deny, cargo-auditable). One container is reused across all pipeline stages.
+- **GitOps Writeback** — Post-build promotion: commit image tag/digest updates to a Gitea-hosted manifests repo (direct push or PR-gated) so ArgoCD/Flux sync the change
+- **Build Notifications** — Optional build-lifecycle messages (start / success / failure / aborted) via an apprise-api sidecar, fanning out to Slack / Matrix / Mattermost / Teams
 
-## Quick Start
+## Quickstart
 
-### Building
-
-```bash
-# Build the binary
-cargo build --release
-
-# Build Docker image (uses Alpine Linux for minimal size)
-docker build -t redis-vault:latest .
-
-# Build with specific versions
-docker build \
-  --build-arg RUST_VERSION=1.90 \
-  --build-arg ALPINE_VERSION=3.22 \
-  -t redis-vault:latest .
-```
-
-### Running in Kubernetes
+### 1. Add as a git subtree
 
 ```bash
-# Create namespace
-kubectl create namespace redis
-
-# Apply configurations
-kubectl apply -f k8s/deployment.yaml
+git subtree add --prefix .ci https://git.zero-downtime.net/ZeroDownTime/ci-tools-lib.git main --squash
 ```
 
-## Configuration
+### 2. Configure your project
 
-The application can be configured via environment variables or YAML file. **Environment variables take precedence over the configuration file.**
+Import the relevant `.just` modules in your `justfile`:
 
-### Configuration Priority
-
-1. **Environment Variables** (highest priority)
-2. **Configuration File** (config.yaml)
-3. **Default Values** (lowest priority)
-
-### Configuration File (config.yaml)
-
-```yaml
-redis:
-  # Redis connection string
-  connection_string: "redis://localhost:6379"
-
-  # Path to Redis data directory containing dump.rdb
-  data_path: "/data"
-
-  # Unique name for this Redis node
-  node_name: "redis-master-01"
-
-  # Backup configuration based on Redis role
-  backup_master: true      # Backup if this node is a master
-  backup_replica: false    # Backup if this node is a replica
-
-backup:
-  # Storage backend URL (S3 or GCS)
-  # Format: s3://bucket-name/prefix/ or gs://bucket-name/prefix/
-  storage_url: "s3://my-redis-vault/production/redis/"
-
-  # Interval between backup checks
-  # Supports formats like: 30s, 5m, 1h, 6h, 1d
-  interval: "1h"
-
-  # Filename of the Redis dump file
-  dump_filename: "dump.rdb"
-
-  # Initial delay before starting backups (allows Redis replication to stabilize)
-  # Supports formats like: 30s, 5m, 10m
-  initial_delay: "300s"
-
-# Examples of storage_url:
-# S3:  storage_url: "s3://my-bucket/path/to/backups/"
-# GCS: storage_url: "gs://my-bucket/path/to/backups/"
-
-retention:
-  # Number of recent backups to keep
-  keep_last: 7
-
-  # Keep backups newer than this duration
-  # Supports formats like: 7d, 30d, 1w
-  keep_duration: "30d"
-
-logging:
-  # Log format: "text" or "json"
-  format: "text"
-
-  # Application log level: trace, debug, info, warn, error
-  # Note: Default log level for other crates is set to "warn"
-  # Use RUST_LOG environment variable to override all log levels
-  level: "info"
-
-metrics:
-  # Enable Prometheus metrics endpoint
-  enabled: false
-
-  # Port for metrics server
-  port: 9090
-
-  # Listen address for metrics server
-  listen_address: "0.0.0.0"
+```just
+import '.ci/container.just'
+import '.ci/rust.just'
+import '.ci/git.just'
 ```
 
-### Backup File Naming
+### 3. Integrate with Jenkins
 
-Backup files are automatically named using the following structure:
+Add a `Jenkinsfile` using the shared library:
+
+```groovy
+@Library('ci-tools-lib') _
+
+justContainer(
+  imageName:   'my-app',
+  registry:    'public.ecr.aws/<alias>',  // or '<account>.dkr.ecr.<region>.amazonaws.com'
+  buildOnly:   ['src/.*', '.justfile'],
+  needBuilder: true,
+)
+```
+
+`registry` is required — set it explicitly per project. The library auto-detects public vs private ECR from the URL shape (`public.ecr.aws/...` vs `*.dkr.ecr.<region>.amazonaws.com`) and dispatches to the correct `aws ecr` / `aws ecr-public` API. Region for private is parsed from the hostname. Both the agent and dev workstation need ambient AWS credentials in scope (env vars, instance profile, etc.) — the library does no credential plumbing.
+
+## Components
+
+### Just — `.just` modules (recommended)
+
+All build logic lives in these modules so a developer reproduces full CI behaviour locally by running the same `just` recipes Jenkins runs.
+
+| Module            | Key Recipes                                              |
+|-------------------|----------------------------------------------------------|
+| `container.just`  | `build`, `scan` (Grype + betterleaks), `push` (multi-arch manifest), `ecr-login`, `create-repo`, `rm-remote-untagged`, `clean`. Registry-touching recipes take the registry as their first positional arg; public vs private AWS ECR auto-detected from the URL. No default registry — every consumer declares it. |
+| `rust.just`       | `prepare` (`cargo fetch --locked`), `lint` (clippy + cargo-deny), `build` (cargo auditable), `test`, `update-lock`, `cut-release`. Opt into an Alpine musl target with `CARGO_BUILD_MUSL`. |
+| `python.just`     | uv-based: `prepare` (`uv sync --locked`), `lint` (flake8), `build` (`uv build`), `test` (pytest), `upload` (`uv publish`) |
+| `git.just`        | Version computation from tags (`git describe`, `$TAG_MATCH`-aware), branch-suffixed `tag`, `arch` (`$ARCH`, default amd64), `cleanup-tags`, `ci-pull-upstream` |
+| `builder.just`    | `update-builder` (build toolchain image), `use-builder <target>` (run a target inside the reused toolchain container; mounts repo root + sccache cache for Rust), `clean-builder` |
+| `common.just`     | `scan-src` source secret scan; imported by the language modules |
+| `gitops.just`     | `update`. Edits image tags / yq paths in a manifests repo, commits, pushes (with rebase-retry). Commit message comes from `$GITOPS_COMMIT_MESSAGE`. PR opening lives in `gitea.groovy` (`gitea.openPullRequest`). Updates spec is a JSON file so push-mode promotions reproduce locally. |
+
+### Jenkins — Shared Library (`vars/`)
+
+Thin glue only — each helper wraps Jenkins primitives around a `just` invocation; the real logic stays in the `.just` modules.
+
+| Library                  | Purpose                                              |
+|--------------------------|------------------------------------------------------|
+| `justContainer.groovy`   | Entry point — the declarative pipeline composing the per-stage helpers |
+| `container.groovy`       | Per-stage helpers (`changeset`, `prepare`, `lint`, `build`, `test`, `scan`, `push`, `clean`, `cleanBuilder`) invoked by `justContainer` |
+| `gitea.groovy`           | Gitea API integration for change detection and PR open/reuse |
+| `notify.groovy`          | Optional build-lifecycle notifications via an apprise-api sidecar (see [Build notifications](#build-notifications)) |
+| `protectBuildFiles.groovy` | Overwrites CI files from target branch during PR builds |
+| `updateGitops.groovy` | GitOps writeback wrapper: commits yq-path updates to a Gitea manifests repo (`push` or `pr` mode). Auto-picks `sshagent` vs. `gitUsernamePassword` from the repo URL scheme. See `examples/Jenkinsfile.gitops-{push,pr}.groovy`. |
+
+**Pipeline stages:** Changeset → Prepare → Lint → Build → Test → Scan → Push → Cleanup
+
+`Changeset` is a minimal first stage that runs the gitea change detection and sets the `SKIP` flag (no changed file matched `buildOnly`, and no force build) — every later stage, `Prepare` included, is gated on it, so the skip decision is made before any prep work runs.
+
+`justContainer` declares a `FORCE_BUILD` boolean build parameter (default off). Tick it in "Build with Parameters" to bypass the `buildOnly` skip gate for a one-off rebuild without editing the Jenkinsfile. (The checkbox appears from the second build onward — Jenkins registers parameters retroactively.)
+
+### Utilities
+
+- **`ecr_lifecycle.py`** — Python utility (requires `boto3`) to manage ECR image lifecycle for public *and* private ECR: removes untagged images, prunes old dev-tagged images, keeps a configurable number of recent tagged images. Detects public vs private from the `--registry` URL.
+- **`utils.sh`** — Bash helpers for semantic version bumping (`bumpVersion`) and git commit/tag/push automation (`addCommitTagPush`).
+- **`Dockerfile.rust`** — Rust toolchain builder image (Alpine 3.24) with cargo, clippy, sccache (`RUSTC_WRAPPER`), cargo-auditable, cargo-deny, and just. Used by the `use-builder` flow.
+- **`Dockerfile.python`** — Python toolchain builder image (Alpine 3.24, uv-based) for the `use-builder` flow.
+
+## Monorepo layout
+
+For a monorepo where each service has its own `.justfile`, `Jenkinsfile`, and `Dockerfile` under a subdirectory (e.g. `services/api-users/`), share one `.ci/` subtree at the repo root and pass per-service config:
 
 ```
-{prefix}/{node_name}_{timestamp}.rdb
+repo/
+├── .ci/                            # git subtree of ci-tools-lib
+└── services/
+    └── api-users/
+        ├── Jenkinsfile
+        ├── .justfile
+        ├── Dockerfile
+        └── pyproject.toml
 ```
 
-**Example filename:**
+**`services/api-users/.justfile`:**
+
+```just
+# Per-service tag prefix so `git describe` only sees this service's releases
+export TAG_MATCH := "api-users/v*.*.*"
+
+# Optional (Rust only, needs `needBuilder`): build with an explicit Alpine musl
+# target inside the builder, so artifacts land in `target/<triple>/<profile>/`.
+# Update this service's Dockerfile `COPY` path to match. The triple follows ARCH
+# (x86_64- / aarch64-alpine-linux-musl) and is injected by `use-builder` *inside
+# the container only* — plain `just build` on a non-Alpine dev host is unaffected.
+# Do NOT `export CARGO_BUILD_TARGET` here: it would also hit host cargo and break
+# local `just build` off Alpine.
+# export CARGO_BUILD_MUSL := "true"
+
+# Toolchain — flat-imported so `just lint`, `just prepare`, `just scan-src`,
+# `just use-builder lint` etc. work. Pulls common.just, builder.just, git.just.
+import '../../.ci/python.just'
+
+# Container recipes namespaced — Jenkins glue calls `just container::build`.
+mod container '../../.ci/container.just'
 ```
-redis-vault/redis-master-01_2024-12-01T14:30:22Z.rdb
+
+**`services/api-users/Jenkinsfile`:**
+
+```groovy
+@Library('ci-tools-lib') _
+
+justContainer(
+    workDir:     'services/api-users',
+    imageName:   'api-users',
+    registry:    '1234567890.dkr.ecr.us-east-1.amazonaws.com',  // or public.ecr.aws/<alias>
+    buildOnly:   ['services/api-users/.*', '\\.ci/.*'],
+    needBuilder: true,
+    // Extra env (withEnv format) applied to the Prepare/Lint/Build/Test stages.
+    // Static values only. Host-safe Rust opt-ins (read by use-builder inside the
+    // Alpine builder): env: ['CARGO_BUILD_MUSL=true', 'ARCH=arm64'].
+    // env: ['CARGO_BUILD_MUSL=true'],
+    // Optional build notifications via the apprise-api sidecar (see below).
+    // notify: [key: 'team-platform'],   // events default to start/success/failure/aborted
+)
 ```
 
-**Components:**
-- `prefix`: Storage prefix from configuration (e.g., "redis-vault")
-- `node_name`: Redis node identifier (e.g., "redis-master-01")
-- `timestamp`: File modification time in RFC3339 format (ISO 8601)
-- `.rdb`: File extension
+`protect` defaults to `["${workDir}/.justfile", "${workDir}/Jenkinsfile", '.ci/**']`, so service-scoped build files are restored from the target branch on PR builds without needing to override it. Tag releases as `api-users/v1.2.3` and configure the Jenkins multibranch project's *Script Path* to `services/*/Jenkinsfile`.
 
-**Note:** The timestamp reflects the Redis dump file's last modification time, ensuring backups are named based on when the data was actually created by Redis, not when the backup process ran.
+## Build notifications
 
-### Environment Variables
+Optional build-lifecycle notifications (start / success / failure / aborted) are sent through an [apprise-api](https://github.com/caronc/apprise-api) sidecar running next to the Jenkins controller. `justContainer` POSTs a single JSON event; apprise-api fans out to the configured chat targets (Slack, Matrix, Mattermost, Teams, ...). Off unless `notify` is set — existing consumers are unaffected.
 
-Environment variables **override** any values set in the configuration file. This allows for easy deployment-specific overrides.
+Destinations and their secrets live in apprise-api **config keys**, never in this repo: register e.g. `slack://…`/`matrix://…` URLs under a key (`team-platform`) on the sidecar, then reference the key from the Jenkinsfile. If `key` is omitted (and no `urls` are given), the module falls back to apprise-api's conventional `default` key — so a single shared `default` config requires no per-Jenkinsfile `key` at all.
 
-#### **Redis Configuration**
+```groovy
+justContainer(
+    // ...
+    notify: [
+        // key:        'team-platform',                // apprise-api config key (defaults to 'default' when omitted)
+        // urls:       ['slack://T/B/xxx'],             // stateless alternative (destinations in-repo)
+        // events:     ['start', 'success', 'failure', 'aborted'],  // this is the default set
+        tag:           'ci',                            // optional apprise tag filter
+        // url:        'http://apprise-api:8000',       // optional; defaults to env.APPRISE_API_URL
+        // credentialsId: 'apprise-token',              // optional Secret Text -> 'Authorization: Bearer <token>'
+        // notifySkipped: true,                         // also notify SKIP (no-change) builds
+        // messages:   [failure: { "build broke: ${env.BUILD_URL}" }],  // optional per-event body closures
+    ],
+)
+```
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `REDIS_CONNECTION` | Redis connection string | `redis://localhost:6379` |
-| `REDIS_DATA_PATH` | Path to Redis data directory | `/data` |
-| `REDIS_NODE_NAME` | Unique name for this Redis node | `redis-node` |
-| `BACKUP_MASTER` | Backup if node is master (`true` or `false`) | `true` |
-| `BACKUP_REPLICA` | Backup if node is replica (`true` or `false`) | `true` |
+- **Endpoint** is shared infra, so set `APPRISE_API_URL` once on the controller (global env); `notify.url` overrides per-job.
+- **Destinations** resolve in this order: an explicit `key` → `/notify/<key>`; else inline `urls` → stateless `/notify`; else the `default` key → `/notify/default`. Pre-register that `default` config on the sidecar to drive notifications from `notify: [events: [...]]` alone.
+- **Events** map from the build result: `SUCCESS→success`, `FAILURE→failure`, `UNSTABLE→unstable`, `ABORTED`/`NOT_BUILT→aborted`, plus `start`. All five fire by default (`['start','success','failure','aborted']`); set `events` to narrow the set. The apprise notification `type` (`info`/`success`/`warning`/`failure`) drives per-platform colour automatically.
+- **Aborted builds** fire from `post { always }` like any other end event. A UI abort interrupts the in-flight notification step once, so the send is retried a single time to survive the abort — a hard/double-kill that tears the executor down may still skip it.
+- **SKIP builds** (no source changes) are silent unless `notifySkipped: true` (governs start and end symmetrically).
+- **Title** reads like a sentence with a leading status emoji and, on end events, a build-status transition vs. the previous run — e.g. `🚀 Jenkins build of api-users/main started`, `✅ Jenkins build of api-users/main finished successfully (Fixed)`, `❌ … failed (Still failing)`.
+- **Body** defaults to a one-line summary: a PR/branch ref (PR builds link to `CHANGE_URL`; branch builds link to the gitea branch page), the short commit SHA (linked to the gitea commit page), and a linked Jenkins `build <number>` followed by the trigger cause (`triggered by user …`) on start events, or the duration (`took …`) on end events. All git links are derived in-process from `GIT_URL` (via `gitea.parseGitUrl`) — no remote call. Override any event's body with a closure under `messages` (resolved lazily so `env`/`currentBuild` are populated).
+- A notification problem (sidecar down, bad key) is logged and **never fails the build**.
 
-#### **Backup Configuration**
+## GitOps writeback
 
-| Variable | Description | Default | Example |
-|----------|-------------|---------|---------|
-| `STORAGE_URL` | Storage backend URL (S3 or GCS) | `s3://redis-vault-bucket/` | `s3://my-bucket/redis/` or `gs://my-bucket/backups/` |
-| `BACKUP_INTERVAL` | Time between backup checks | `1h` | `30m`, `6h`, `1d` |
-| `DUMP_FILENAME` | Redis dump filename | `dump.rdb` | `dump.rdb` |
-| `INITIAL_DELAY` | Initial delay before first backup | `300s` | `60s`, `5m`, `10m` |
+Promote a freshly built image into a Gitea-hosted manifests repo so ArgoCD/Flux picks it up. The image tag is captured from `container.push(config)`'s return value (the actual `git_tag` published — e.g. `v1.2.3` on a tagged commit) and threaded into the Promote stage:
 
-**Note:** `STORAGE_URL` uses URL format:
-- **S3:** `s3://bucket-name/optional-prefix/`
-- **GCS:** `gs://bucket-name/optional-prefix/`
+```groovy
+@Library('ci-tools-lib') _
 
-The storage backend (S3 or GCS) is automatically determined from the URL scheme.
+def config   = [imageName: 'payments', registry: '...', /* ... */]
+def imageTag                                   // captured in Push, consumed in Promote
 
-#### **Retention Configuration**
+pipeline {
+    // ... agent, Prepare/Lint/Build/Test/Scan stages calling container.<stage>(config) ...
 
-| Variable | Description | Default | Example |
-|----------|-------------|---------|---------|
-| `RETENTION_KEEP_LAST` | Number of recent backups to keep | `7` | `30`, `90` |
-| `RETENTION_KEEP_DURATION` | Keep backups newer than this duration | None | `7d`, `30d`, `90d` |
+    stage('Push')   { steps { script { imageTag = container.push(config) } } }
 
-#### **Logging Configuration**
+    stage('Promote') {
+        steps { script {
+            updateGitops(
+                repo:          'git@git.zero-downtime.net:zdt/infra.git',  // or https://...
+                branch:        'main',
+                credentialsId: 'infra-repo-deploy-key',                    // SSH key, or userpass for HTTPS
+                updates: [
+                    'apps/payments/values.yaml': [
+                        '.image.tag': imageTag,
+                    ],
+                ],
+            )
+        } }
+    }
+}
+```
 
-| Variable | Description | Default | Options |
-|----------|-------------|---------|---------|
-| `LOG_FORMAT` | Log format | `text` | `text`, `json` |
-| `LOG_LEVEL` | Application log level | `info` | `trace`, `debug`, `info`, `warn`, `error` |
-| `RUST_LOG` | Override all log levels (takes precedence over `LOG_LEVEL`) | None | `debug`, `redis_vault=trace` |
+PR-gated mode adds `mode: 'pr'`, `tokenCredentialsId:` (Gitea API token), `prBranch:`, `prTitle:`, `prBody:`. Returns `[sha, branch, prUrl]`. The PR branch is reused on re-runs (idempotent: existing open PR URL is returned). See `examples/Jenkinsfile.gitops-push.groovy` and `examples/Jenkinsfile.gitops-pr.groovy` for full pipelines.
 
-#### **Metrics Configuration**
-
-| Variable | Description | Default | Example |
-|----------|-------------|---------|---------|
-| `METRICS_ENABLED` | Enable Prometheus metrics endpoint | `false` | `true`, `false` |
-| `METRICS_PORT` | Port for metrics server | `9090` | `8080`, `9090` |
-| `METRICS_LISTEN_ADDRESS` | Listen address for metrics server | `0.0.0.0` | `0.0.0.0`, `127.0.0.1` |
-
-### Configuration Override Example
+Reproduce locally with the same recipes Jenkins runs:
 
 ```bash
-# Base configuration in config.yaml sets storage to dev environment
-# Override for production deployment:
-export STORAGE_URL="s3://prod-redis-backups/redis-vault/"
-export RETENTION_KEEP_LAST="30"
-export RETENTION_KEEP_DURATION="90d"
-export METRICS_ENABLED="true"
-
-# These environment variables will override the file configuration
-redis-vault --config config.yaml
+echo '{"apps/payments/values.yaml":{".image.tag":"v1.2.3"}}' > /tmp/u.json
+just gitops::update git@git.zero-downtime.net:zdt/infra.git main /tmp/u.json
 ```
 
-**Example with GCS:**
+The consumer's root justfile must import the module: `mod gitops '.ci/gitops.just'`.
+
+## Local dev
+
+Recipes that touch the registry take it as their first positional argument:
+
 ```bash
-# Use Google Cloud Storage instead
-export STORAGE_URL="gs://prod-redis-backups/redis-vault/"
-export REDIS_NODE_NAME="redis-master-01"
-export LOG_FORMAT="json"
-export METRICS_PORT="8080"
-
-redis-vault --config config.yaml
+just container::build my-app                                          # registry not needed
+just container::ecr-login public.ecr.aws/<alias>
+just container::push public.ecr.aws/<alias> my-app
+just container::create-repo public.ecr.aws/<alias> my-app
 ```
 
-## Deployment Patterns
+For ergonomics, define the registry once in your project's root `.justfile` and add convenience wrappers:
 
-### Kubernetes StatefulSet Sidecar
+```just
+registry := "public.ecr.aws/<alias>"          # or "<account>.dkr.ecr.<region>.amazonaws.com"
 
-- Shared volume between Redis and backup containers
-- Automatic restart on failure
-- Resource limits to prevent impact on Redis
-- Backup container has read-only access to Redis data
-- Runs as unprivileged user in container
-- Use IAM roles instead of keys when possible
+mod container '.ci/container.just'
+import '.ci/python.just'                       # or rust.just
+
+# Convenience wrappers — pass the registry through to module recipes
+push image="":
+  just container::push {{ registry }} {{ image }}
+
+ecr-login:
+  just container::ecr-login {{ registry }}
+
+create-repo image="":
+  just container::create-repo {{ registry }} {{ image }}
+```
+
+`build`, `scan`, and `clean` recipes don't take a registry, so they remain reachable as `just container::build` etc. without any wrapping. The Jenkins glue passes the registry directly from the `registry:` config field — consumers don't need wrappers for CI.
+
+## Maintenance
+
+Pull the latest upstream changes into your project:
+
+```bash
+git subtree pull --prefix .ci https://git.zero-downtime.net/ZeroDownTime/ci-tools-lib.git main --squash
+```
+
+## Renovate
+
+Run renovate locally to test custom config:
+
+```bash
+LOG_LEVEL=debug ~/node_modules/renovate/dist/renovate.js --platform local --dry-run
+```
 
 ## License
 
-AGPLv3 - See LICENSE file for details
-
-Development of this software was assisted by Claude, an AI assistant created by Anthropic. Any AI-generated code were reviewed, modified, and integrated by human developers as part of the development process.
+[GNU AGPL v3](LICENSE)
