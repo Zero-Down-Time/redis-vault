@@ -5,6 +5,6 @@ library identifier: 'zdt-lib@main', retriever: modernSCM(
 justContainer(
   registry: 'public.ecr.aws/zero-downtime',
   needBuilder: true,
-  buildOnly: ['.ci\\/.*', 'Cargo.*', 'src\\/.*', 'Dockerfile'],
+  buildOnly: ['Cargo.*', 'src\\/.*', 'Dockerfile'],
   notify: [ tag: 'ci' ],
   )
