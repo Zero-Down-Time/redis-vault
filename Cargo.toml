@@ -9,7 +9,7 @@ keywords = ["redis", "kubernetes", "sidecar"]
 [dependencies]
 anyhow = { version = "1.0", default-features = false, features = ["std"] }
 async-trait = { version = "0.1", default-features = false }
-aws-sdk-s3 = { version = "1.132", default-features = false, features = ["default-https-client", "rt-tokio", "rustls", "http-1x", "sigv4a"] }
+aws-sdk-s3 = { version = "1.132", default-features = false, features = ["default-https-client", "rt-tokio", "http-1x", "sigv4a"] }
 aws-config = { version = "1.8", default-features = false, features = ["default-https-client", "rt-tokio"] }
 bytes = { version = "1.11", default-features = false, features = ["std"] }
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
