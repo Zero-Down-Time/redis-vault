@@ -19,7 +19,8 @@ use tracing::{debug, error, info, warn};
 
 // Parse a human-friendly duration like "1h 30m" into a std Duration
 fn parse_duration(s: &str) -> std::result::Result<Duration, String> {
-    let sd = s.parse::<jiff::Span>()
+    let sd = s
+        .parse::<jiff::Span>()
         .map_err(|e| e.to_string())?
         .to_duration(jiff::SpanRelativeTo::days_are_24_hours())
         .map_err(|e| e.to_string())?;
@@ -327,8 +328,10 @@ impl BackupManager {
             if !once {
                 // calculate seconds till next execution time slot using UNIX timestamp as reference
                 let now = Timestamp::now().as_second();
-                let next_interval =
-                    Duration::new((interval.as_secs() as i64 - now % interval.as_secs() as i64) as u64, 0);
+                let next_interval = Duration::new(
+                    (interval.as_secs() as i64 - now % interval.as_secs() as i64) as u64,
+                    0,
+                );
 
                 info!(
                     "Next backup at {}",

@@ -1,8 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
-use jiff::Timestamp;
 use gcloud_storage::client::{Client as GcsClient, ClientConfig};
+use jiff::Timestamp;
 
 use super::{BackupMetadata, StorageBackend};
 use crate::backup::BackupError;
@@ -63,9 +63,8 @@ impl StorageBackend for GcsStorage {
         if let Some(items) = objects.items {
             for object in items {
                 if let Some(time_created) = object.time_created {
-                    let timestamp =
-                        Timestamp::from_second(time_created.unix_timestamp())
-                            .unwrap_or_else(|_| Timestamp::now());
+                    let timestamp = Timestamp::from_second(time_created.unix_timestamp())
+                        .unwrap_or_else(|_| Timestamp::now());
 
                     backups.push(BackupMetadata {
                         key: object.name,
