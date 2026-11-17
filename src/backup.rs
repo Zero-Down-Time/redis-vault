@@ -7,15 +7,24 @@
 //! - Storage backend interaction
 
 use anyhow::Result;
-use chrono::Utc;
+use jiff::Timestamp;
 use redis::aio::ConnectionManager;
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 use tokio::fs;
 use tokio::sync::RwLock;
 use tokio::time;
 use tracing::{debug, error, info, warn};
+
+// Parse a human-friendly duration like "1h 30m" into a std Duration
+fn parse_duration(s: &str) -> std::result::Result<Duration, String> {
+    let sd = s.parse::<jiff::Span>()
+        .map_err(|e| e.to_string())?
+        .to_duration(jiff::SpanRelativeTo::days_are_24_hours())
+        .map_err(|e| e.to_string())?;
+    Duration::try_from(sd).map_err(|e| e.to_string())
+}
 
 use crate::config::Config;
 use crate::metrics::Metrics;
@@ -164,7 +173,9 @@ impl BackupManager {
                 "{}/{}_{}.rdb",
                 self.storage.prefix.trim_end_matches('/'),
                 self.config.redis.node_name,
-                humantime::format_rfc3339_seconds(modified)
+                Timestamp::try_from(modified)
+                    .unwrap_or_else(|_| Timestamp::now())
+                    .strftime("%Y-%m-%dT%H:%M:%SZ")
             );
 
             // Upload to storage
@@ -182,7 +193,7 @@ impl BackupManager {
                     metrics.backup_size_bytes.observe(data_size);
                     metrics
                         .last_backup_timestamp
-                        .set(Utc::now().timestamp() as f64);
+                        .set(Timestamp::now().as_second() as f64);
 
                     Ok(())
                 }
@@ -247,9 +258,11 @@ impl BackupManager {
 
         // Keep backups within duration
         if let Some(duration_str) = &self.config.retention.keep_duration {
-            let duration = humantime::parse_duration(duration_str)
+            let duration = parse_duration(duration_str)
                 .map_err(|e| BackupError::Config(format!("Invalid duration: {}", e)))?;
-            let cutoff = Utc::now() - chrono::Duration::from_std(duration)?;
+            let cutoff = Timestamp::now()
+                .checked_sub(duration)
+                .map_err(|e| BackupError::Config(format!("Invalid cutoff: {}", e)))?;
 
             for (i, backup) in backups.iter().enumerate() {
                 if backup.timestamp > cutoff {
@@ -296,10 +309,10 @@ impl BackupManager {
     /// 2. Schedules backups at fixed intervals aligned to Unix timestamps
     /// 3. Runs continuously unless `once` is true (for testing)
     pub async fn run(&mut self, once: bool) -> Result<()> {
-        let interval = humantime::parse_duration(&self.config.backup.interval)
+        let interval = parse_duration(&self.config.backup.interval)
             .map_err(|e| BackupError::Config(format!("Invalid interval: {}", e)))?;
 
-        let initial_delay = humantime::parse_duration(&self.config.backup.initial_delay)
+        let initial_delay = parse_duration(&self.config.backup.initial_delay)
             .map_err(|e| BackupError::Config(format!("Invalid initial_delay: {}", e)))?;
 
         if !initial_delay.is_zero() {
@@ -313,15 +326,13 @@ impl BackupManager {
         loop {
             if !once {
                 // calculate seconds till next execution time slot using UNIX timestamp as reference
-                let next_interval = Duration::new(
-                    (interval.as_secs() as i64 - Utc::now().timestamp() % interval.as_secs() as i64)
-                        as u64,
-                    0,
-                );
+                let now = Timestamp::now().as_second();
+                let next_interval =
+                    Duration::new((interval.as_secs() as i64 - now % interval.as_secs() as i64) as u64, 0);
 
                 info!(
                     "Next backup at {}",
-                    humantime::format_rfc3339_seconds(SystemTime::now() + next_interval)
+                    (Timestamp::now() + next_interval).strftime("%Y-%m-%dT%H:%M:%SZ")
                 );
 
                 // wait for remaining time

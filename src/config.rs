@@ -97,7 +97,7 @@ pub fn load_config(path: &Path) -> Result<Config> {
         let content = fs::read_to_string(path)
             .with_context(|| format!("Failed to read configuration file: {:?}", path))?;
         let file_config: Config = serde_json::from_str(&content)
-            .or_else(|_| serde_yaml::from_str(&content))
+            .or_else(|_| serde_saphyr::from_str(&content))
             .context("Failed to parse configuration file")?;
         config = file_config;
     } else {

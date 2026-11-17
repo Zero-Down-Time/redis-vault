@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use std::fmt;
 use std::sync::Arc;
 
@@ -20,7 +20,7 @@ pub trait StorageBackend: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct BackupMetadata {
     pub key: String,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     #[allow(dead_code)]
     pub size: i64,
 }

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use gcloud_storage::client::{Client as GcsClient, ClientConfig};
 
 use super::{BackupMetadata, StorageBackend};
@@ -64,8 +64,8 @@ impl StorageBackend for GcsStorage {
             for object in items {
                 if let Some(time_created) = object.time_created {
                     let timestamp =
-                        DateTime::<Utc>::from_timestamp(time_created.unix_timestamp(), 0)
-                            .unwrap_or_else(Utc::now);
+                        Timestamp::from_second(time_created.unix_timestamp())
+                            .unwrap_or_else(|_| Timestamp::now());
 
                     backups.push(BackupMetadata {
                         key: object.name,

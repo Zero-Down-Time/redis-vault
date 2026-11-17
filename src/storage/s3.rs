@@ -2,7 +2,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use aws_sdk_s3::Client as S3Client;
 use bytes::Bytes;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use super::{BackupMetadata, StorageBackend};
 use crate::backup::BackupError;
@@ -59,8 +59,8 @@ impl StorageBackend for S3Storage {
                     if let (Some(key), Some(last_modified)) = (object.key, object.last_modified) {
                         backups.push(BackupMetadata {
                             key,
-                            timestamp: DateTime::from_timestamp(last_modified.secs(), 0)
-                                .unwrap_or_else(Utc::now),
+                            timestamp: Timestamp::from_second(last_modified.secs())
+                                .unwrap_or_else(|_| Timestamp::now()),
                             size: object.size.unwrap_or(0),
                         });
                     }
