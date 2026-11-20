@@ -1,8 +1,11 @@
 @Library('zdt-ci-tools') _
 
-justContainer(
-  registry: 'public.ecr.aws/zero-downtime',
-  needBuilder: true,
-  buildOnly: ['Cargo.*', 'src\\/.*', 'Dockerfile'],
-  notify: [ tag: 'ci' ],
-  )
+runPipeline(
+  [
+    registry: 'public.ecr.aws/zero-downtime',
+    needBuilder: true,
+    buildOnly: ['Cargo.*', 'src\\/.*', 'Dockerfile'],
+    notify: [ tag: 'ci' ],
+  ],
+  stagesLibrary.defaults(),
+)
